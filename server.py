@@ -670,15 +670,10 @@ def index():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    data = request.get_json()
+    data = request.get_json(force=True, silent=True) or {}
     messages = data.get('messages', [])
 
     api_key = os.environ.get('NVIDIA_NIM_API_KEY', '')
-    if not api_key:
-        def err():
-            yield 'data: ' + json.dumps({"type": "error", "content": "NVIDIA_NIM_API_KEY not set."}) + '\n\n'
-            yield 'data: [DONE]\n\n'
-        return Response(stream_with_context(err()), mimetype='text/event-stream')
 
     from openai import OpenAI
     client = OpenAI(
@@ -689,7 +684,14 @@ def chat():
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
 
     def generate():
+        # Immediate heartbeat so the proxy doesn't time out before NVIDIA responds
+        yield ': heartbeat\n\n'
         try:
+            if not api_key:
+                yield 'data: ' + json.dumps({"type": "error", "content": "NVIDIA_NIM_API_KEY not configured."}) + '\n\n'
+                yield 'data: [DONE]\n\n'
+                return
+
             completion = client.chat.completions.create(
                 model="nvidia/nemotron-3-ultra-550b-a55b",
                 messages=full_messages,
@@ -716,7 +718,13 @@ def chat():
             yield 'data: ' + json.dumps({"type": "error", "content": str(e)}) + '\n\n'
             yield 'data: [DONE]\n\n'
 
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+    headers = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+    }
+    return Response(stream_with_context(generate()), headers=headers)
 
 
 if __name__ == '__main__':

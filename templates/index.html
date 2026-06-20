@@ -3,207 +3,336 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OSINT NEXUS - AI Investigator</title>
+<title>RAVENS — NVIDIA NIM NEXUS</title>
 <style>
 :root{
-  --bg:#030609; --s1:#060d14; --s2:#0a1520;
-  --border:#0d2035; --border2:#123050;
-  --green:#00ff88; --green2:#00cc66;
-  --blue:#00aaff; --purple:#aa55ff;
-  --orange:#ff8c00; --red:#ff3333;
-  --yellow:#ffdd00; --text:#b0cce0; --textd:#3a6080;
-  --nvidia:#76b947;
+  --bg:#060001;--s1:#0c0103;--s2:#130205;
+  --border:#280608;--border2:#3d0c10;
+  --red:#cc2233;--red2:#ff2244;--red3:#ff4466;
+  --dim:#6b1520;--acc:#8b0011;
+  --text:#e0b8bd;--textd:#6b3038;
+  --nvidia:#76b947;--warn:#ff8833;--info:#cc7788;
+  --gold:#ffcc44;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;overflow:hidden;font-family:'Segoe UI',monospace;background:var(--bg);color:var(--text)}
-body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,.012) 2px,rgba(0,255,136,.012) 4px)}
+html,body{height:100%;overflow:hidden;font-family:'Courier New',monospace;background:var(--bg);color:var(--text)}
 
+/* scanline */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9000;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(204,34,51,.015) 2px,rgba(204,34,51,.015) 4px)}
+
+/* ── FEATHERS ─────────────────────────────── */
+#feather-layer{position:fixed;inset:0;pointer-events:none;z-index:8900;overflow:hidden}
+.feather{
+  position:absolute;top:-60px;
+  width:3px;height:16px;
+  border-radius:50% 50% 40% 40%;
+  background:linear-gradient(180deg,transparent 0%,rgba(80,0,10,.6) 40%,rgba(20,0,4,.4) 100%);
+  animation:featherFall linear infinite;
+  transform-origin:center top;
+}
+@keyframes featherFall{
+  0%{transform:translateY(0) rotate(var(--fr)) scaleX(1);opacity:0}
+  8%{opacity:var(--fo)}
+  50%{transform:translateY(50vh) rotate(calc(var(--fr) + 15deg)) scaleX(-1)}
+  92%{opacity:var(--fo)}
+  100%{transform:translateY(105vh) rotate(calc(var(--fr) + 30deg)) scaleX(1);opacity:0}
+}
+
+/* ── TOPBAR ───────────────────────────────── */
 #topbar{position:fixed;top:0;left:0;right:0;height:48px;z-index:100;
-  background:rgba(3,6,9,.95);border-bottom:1px solid var(--border2);
-  display:flex;align-items:center;padding:0 1.2rem;gap:1rem;backdrop-filter:blur(10px)}
-.logo{display:flex;align-items:center;gap:.6rem;font-size:.95rem;font-weight:700;color:#e0f0ff;letter-spacing:.05em}
-.logo .badge{background:var(--nvidia);color:#000;font-size:.6rem;font-weight:900;padding:2px 6px;border-radius:3px}
-.pill{display:flex;align-items:center;gap:.4rem;background:var(--s1);border:1px solid var(--border2);
-  border-radius:20px;padding:2px 10px 2px 7px;font-size:.7rem;color:var(--textd)}
-.pill .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
-.right-bar{margin-left:auto;display:flex;align-items:center;gap:.6rem}
-.hbtn{background:none;border:1px solid var(--border2);color:var(--textd);border-radius:6px;
-  padding:3px 10px;font-size:.7rem;cursor:pointer;transition:all .15s}
-.hbtn:hover{border-color:var(--green);color:var(--green)}
+  background:rgba(6,0,1,.97);border-bottom:1px solid var(--border2);
+  display:flex;align-items:center;padding:0 1rem;gap:.8rem;backdrop-filter:blur(12px)}
+.logo{display:flex;align-items:center;gap:.5rem;color:var(--text);user-select:none}
+.logo svg{opacity:.85}
+.logo-name{font-size:1rem;font-weight:900;letter-spacing:.2em;color:var(--red2);
+  text-shadow:0 0 20px rgba(255,34,68,.5)}
+.logo-sub{font-size:.6rem;color:var(--textd);letter-spacing:.15em;margin-left:.2rem}
+.pill{display:flex;align-items:center;gap:.35rem;background:var(--s1);border:1px solid var(--border2);
+  border-radius:20px;padding:2px 10px 2px 7px;font-size:.68rem;color:var(--textd)}
+.pill .dot{width:5px;height:5px;border-radius:50%;background:var(--red2);box-shadow:0 0 8px var(--red2);
+  animation:dotBlink 2s infinite}
+@keyframes dotBlink{0%,100%{opacity:1}50%{opacity:.4}}
+#topbar-right{margin-left:auto;display:flex;align-items:center;gap:.5rem}
+.tbtn{background:none;border:1px solid var(--border2);color:var(--textd);border-radius:5px;
+  padding:3px 9px;font-size:.68rem;cursor:pointer;transition:all .15s;font-family:inherit}
+.tbtn:hover{border-color:var(--red);color:var(--red)}
+.tbtn.on{border-color:var(--red);color:var(--red);background:rgba(204,34,51,.08)}
 
+/* ── LAYOUT ───────────────────────────────── */
 #app{position:fixed;inset:0;top:48px;display:flex}
 
-#left{width:290px;flex-shrink:0;display:flex;flex-direction:column;
-  background:rgba(6,13,20,.97);border-right:1px solid var(--border);z-index:10;overflow:hidden}
-#lscroll{flex:1;overflow-y:auto;padding:.9rem}
+/* ── LEFT PANEL ───────────────────────────── */
+#left{width:280px;flex-shrink:0;display:flex;flex-direction:column;
+  background:rgba(10,1,2,.98);border-right:1px solid var(--border);z-index:10}
+#lscroll{flex:1;overflow-y:auto;padding:.85rem}
 #lscroll::-webkit-scrollbar{width:3px}
-#lscroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px}
-.slabel{font-size:.62rem;font-weight:700;color:var(--textd);text-transform:uppercase;
-  letter-spacing:.12em;margin-bottom:.45rem;margin-top:.9rem}
+#lscroll::-webkit-scrollbar-thumb{background:var(--border2)}
+.slabel{font-size:.6rem;font-weight:700;color:var(--textd);text-transform:uppercase;
+  letter-spacing:.14em;margin-bottom:.4rem;margin-top:.85rem}
 .slabel:first-child{margin-top:0}
-.field{margin-bottom:.55rem}
-.field label{font-size:.68rem;color:var(--textd);display:block;margin-bottom:.2rem}
-.field input{width:100%;background:var(--s2);border:1px solid var(--border2);border-radius:6px;
-  color:var(--text);font-size:.8rem;padding:.45rem .7rem;outline:none;font-family:monospace;transition:border-color .15s}
-.field input:focus{border-color:var(--green);box-shadow:0 0 0 2px rgba(0,255,136,.07)}
+.field{margin-bottom:.5rem}
+.field label{font-size:.65rem;color:var(--textd);display:block;margin-bottom:.18rem;letter-spacing:.05em}
+.field input{width:100%;background:var(--s2);border:1px solid var(--border2);border-radius:5px;
+  color:var(--text);font-size:.78rem;padding:.4rem .65rem;outline:none;font-family:inherit;transition:border-color .15s}
+.field input:focus{border-color:var(--red);box-shadow:0 0 0 2px rgba(204,34,51,.07)}
 .field input::placeholder{color:var(--textd)}
-.mods{display:flex;flex-direction:column;gap:.28rem}
-.mod{display:flex;align-items:center;gap:.55rem;padding:.38rem .5rem;border-radius:6px;
+
+.mods{display:flex;flex-direction:column;gap:.25rem}
+.mod{display:flex;align-items:center;gap:.5rem;padding:.35rem .45rem;border-radius:5px;
   border:1px solid var(--border);cursor:pointer;transition:all .15s;user-select:none}
-.mod:hover{border-color:var(--border2);background:var(--s2)}
-.mod.active{border-color:rgba(0,204,102,.3);background:rgba(0,255,136,.03)}
-.mi{width:20px;text-align:center;font-size:.85rem}
-.ml{flex:1;font-size:.73rem;color:var(--text)}
+.mod:hover{border-color:var(--border2);background:rgba(204,34,51,.04)}
+.mod.active .ms{background:rgba(204,34,51,.35)}
+.mod.running{border-color:rgba(255,200,0,.3);background:rgba(255,200,0,.03)}
+.mod.running .ms{background:var(--gold);box-shadow:0 0 8px var(--gold);animation:blink .7s infinite}
+.mod.found{border-color:rgba(204,34,51,.4);background:rgba(204,34,51,.04)}
+.mod.found .ms{background:var(--red2);box-shadow:0 0 8px var(--red2)}
+.mod.error{border-color:rgba(255,100,0,.3)}
+.mod.error .ms{background:var(--warn)}
+.mi{width:18px;text-align:center;font-size:.8rem}
+.ml{flex:1;font-size:.72rem;color:var(--text)}
 .ms{width:7px;height:7px;border-radius:50%;background:var(--border2);transition:all .3s;flex-shrink:0}
-.mod.active .ms{background:var(--green);box-shadow:0 0 5px var(--green)}
-.mod.running .ms{background:var(--yellow);box-shadow:0 0 8px var(--yellow);animation:blink .8s infinite}
-.mod.found .ms{background:var(--green);box-shadow:0 0 10px var(--green)}
-.mod.error .ms{background:var(--red);box-shadow:0 0 6px var(--red)}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 
-#runBtn{width:100%;padding:.7rem;font-size:.85rem;font-weight:700;
-  background:linear-gradient(135deg,#002618,#004d2e);
-  border:1px solid var(--green2);border-radius:8px;color:var(--green);
-  cursor:pointer;transition:all .2s;letter-spacing:.05em;margin-top:.7rem;
-  text-shadow:0 0 10px rgba(0,255,136,.4)}
-#runBtn:hover:not(:disabled){background:linear-gradient(135deg,#003d24,#00693e);
-  box-shadow:0 0 20px rgba(0,255,136,.2)}
-#runBtn:disabled{opacity:.35;cursor:not-allowed}
-#runBtn.scanning{animation:scan 1.5s infinite}
-@keyframes scan{0%,100%{box-shadow:0 0 8px rgba(0,255,136,.15)}50%{box-shadow:0 0 25px rgba(0,255,136,.5)}}
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:.35rem;margin-top:.7rem}
-.stat{background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:.45rem .5rem;text-align:center}
-.sv{font-size:1.1rem;font-weight:700;color:var(--green);font-family:monospace}
-.sk{font-size:.6rem;color:var(--textd);text-transform:uppercase;letter-spacing:.08em}
+#runBtn{width:100%;padding:.65rem;font-size:.82rem;font-weight:900;
+  background:linear-gradient(135deg,#1a0005,#3d0010);
+  border:1px solid var(--acc);border-radius:7px;color:var(--red2);
+  cursor:pointer;transition:all .2s;letter-spacing:.1em;margin-top:.65rem;
+  text-shadow:0 0 12px rgba(255,34,68,.5);font-family:inherit}
+#runBtn:hover:not(:disabled){background:linear-gradient(135deg,#280008,#5c0018);
+  box-shadow:0 0 25px rgba(204,34,51,.3)}
+#runBtn:disabled{opacity:.3;cursor:not-allowed}
+#runBtn.scanning{animation:scanPulse 1.2s infinite}
+@keyframes scanPulse{0%,100%{box-shadow:0 0 6px rgba(204,34,51,.2)}50%{box-shadow:0 0 30px rgba(204,34,51,.6)}}
 
-#center{flex:1;position:relative;overflow:hidden;background:var(--bg)}
-#net-canvas{position:absolute;inset:0;display:block;cursor:grab}
-#net-canvas:active{cursor:grabbing}
-#hud{position:absolute;top:1rem;left:50%;transform:translateX(-50%);
-  text-align:center;pointer-events:none;z-index:5}
-#target-display{font-size:1rem;font-weight:700;color:var(--green);
-  text-shadow:0 0 20px var(--green),0 0 40px rgba(0,255,136,.3);
-  letter-spacing:.12em;font-family:monospace}
-#target-sub{font-size:.63rem;color:var(--textd);letter-spacing:.15em;text-transform:uppercase;margin-top:.2rem}
-#progress-bar{position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--border);z-index:10}
-#progress-fill{height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--blue));transition:width .5s;box-shadow:0 0 6px var(--green)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:.3rem;margin-top:.65rem}
+.stat{background:var(--s2);border:1px solid var(--border);border-radius:5px;padding:.4rem;text-align:center}
+.sv{font-size:1rem;font-weight:700;color:var(--red2);font-family:inherit}
+.sk{font-size:.58rem;color:var(--textd);text-transform:uppercase;letter-spacing:.1em}
 
-#right{width:350px;flex-shrink:0;display:flex;flex-direction:column;
-  background:rgba(6,13,20,.97);border-left:1px solid var(--border);z-index:10}
+/* ── CENTER CANVAS ────────────────────────── */
+#center{flex:1;position:relative;overflow:hidden}
+#net-canvas{position:absolute;inset:0;display:block;cursor:crosshair}
+#net-canvas.dragging{cursor:grabbing}
+
+#hud{position:absolute;top:.8rem;left:50%;transform:translateX(-50%);
+  text-align:center;pointer-events:none;z-index:5;white-space:nowrap}
+#target-display{font-size:.95rem;font-weight:900;color:var(--red2);
+  text-shadow:0 0 20px rgba(255,34,68,.6),0 0 50px rgba(204,34,51,.25);
+  letter-spacing:.15em}
+#target-sub{font-size:.6rem;color:var(--textd);letter-spacing:.18em;text-transform:uppercase;margin-top:.15rem}
+
+#prog-wrap{position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--border);z-index:10}
+#prog-fill{height:100%;width:0;background:linear-gradient(90deg,var(--red),var(--red2));
+  transition:width .6s ease;box-shadow:0 0 8px var(--red2)}
+
+/* ── NODE INFO PANEL ───────────────────────── */
+#node-panel{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+  width:340px;background:rgba(12,1,3,.97);border:1px solid var(--border2);border-radius:8px;
+  z-index:20;display:none;max-height:240px;overflow:hidden;
+  box-shadow:0 0 30px rgba(204,34,51,.2)}
+#node-panel.show{display:flex;flex-direction:column}
+#np-head{display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;
+  border-bottom:1px solid var(--border);flex-shrink:0}
+#np-icon{font-size:1.1rem}
+#np-name{font-size:.8rem;font-weight:700;color:var(--red2);flex:1;letter-spacing:.08em}
+#np-status{font-size:.62rem;color:var(--textd)}
+#np-close{background:none;border:none;color:var(--textd);cursor:pointer;font-size:.9rem;padding:0}
+#np-close:hover{color:var(--red2)}
+#np-desc{font-size:.68rem;color:var(--textd);padding:.4rem .75rem;border-bottom:1px solid var(--border);flex-shrink:0}
+#np-items{overflow-y:auto;padding:.4rem .75rem;flex:1}
+#np-items::-webkit-scrollbar{width:2px}
+#np-items::-webkit-scrollbar-thumb{background:var(--border2)}
+.np-item{font-size:.68rem;color:var(--text);padding:.18rem 0;border-bottom:1px solid var(--border);
+  font-family:inherit;word-break:break-all}
+.np-item:last-child{border-bottom:none}
+.np-item.hi{color:var(--red3)}
+
+/* ── RIGHT PANEL ──────────────────────────── */
+#right{width:345px;flex-shrink:0;display:flex;flex-direction:column;
+  background:rgba(10,1,2,.98);border-left:1px solid var(--border);z-index:10}
 #tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
-.tab{flex:1;padding:.55rem;font-size:.68rem;font-weight:700;color:var(--textd);
-  cursor:pointer;text-align:center;letter-spacing:.08em;text-transform:uppercase;
-  border-bottom:2px solid transparent;transition:all .15s}
+.tab{flex:1;padding:.5rem;font-size:.65rem;font-weight:700;color:var(--textd);
+  cursor:pointer;text-align:center;letter-spacing:.1em;text-transform:uppercase;
+  border-bottom:2px solid transparent;transition:all .15s;font-family:inherit}
 .tab:hover{color:var(--text)}
-.tab.active{color:var(--green);border-bottom-color:var(--green)}
-.panel{flex:1;overflow-y:auto;display:none;flex-direction:column}
+.tab.active{color:var(--red2);border-bottom-color:var(--red)}
+.panel{flex:1;overflow:hidden;display:none;flex-direction:column}
 .panel.show{display:flex}
-.panel::-webkit-scrollbar{width:3px}
-.panel::-webkit-scrollbar-thumb{background:var(--border2)}
 
-#log-out{flex:1;padding:.7rem;font-family:'Courier New',monospace;font-size:.7rem;
-  line-height:1.65;overflow-y:auto}
-#log-out::-webkit-scrollbar{width:3px}
+/* Console */
+#log-out{flex:1;padding:.6rem;font-size:.68rem;line-height:1.7;overflow-y:auto;
+  font-family:inherit}
+#log-out::-webkit-scrollbar{width:2px}
 #log-out::-webkit-scrollbar-thumb{background:var(--border2)}
-.ll{margin-bottom:.12rem;animation:fi .2s}
-@keyframes fi{from{opacity:0;transform:translateX(5px)}to{opacity:1}}
-.ll.running{color:var(--yellow)}.ll.found{color:var(--green)}.ll.info{color:var(--textd)}
-.ll.error{color:var(--red)}.ll.done{color:var(--blue)}.ll.stream{color:#b0d8ff}
-.lts{color:var(--textd);margin-right:.4rem;font-size:.62rem}
+.ll{margin-bottom:.1rem;animation:llIn .2s ease}
+@keyframes llIn{from{opacity:0;transform:translateX(4px)}to{opacity:1}}
+.ll.running{color:var(--gold)}.ll.found{color:var(--red3)}.ll.info{color:var(--textd)}
+.ll.error{color:var(--warn)}.ll.done{color:var(--info)}.ll.stream{color:#d0a8b0}
+.lts{color:var(--textd);margin-right:.35rem;font-size:.6rem}
 
-#res-content{padding:.7rem;overflow-y:auto;flex:1}
-#res-content::-webkit-scrollbar{width:3px}
+/* Results */
+#res-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#res-toolbar{padding:.45rem .7rem;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;gap:.4rem}
+.rtbtn{background:none;border:1px solid var(--border2);color:var(--textd);border-radius:4px;
+  padding:2px 8px;font-size:.63rem;cursor:pointer;font-family:inherit;transition:all .15s}
+.rtbtn:hover{border-color:var(--red);color:var(--red2)}
+#res-content{flex:1;overflow-y:auto;padding:.6rem}
+#res-content::-webkit-scrollbar{width:2px}
 #res-content::-webkit-scrollbar-thumb{background:var(--border2)}
-.rsec{margin-bottom:.9rem}
-.rsec h4{font-size:.68rem;font-weight:700;color:var(--green);text-transform:uppercase;
-  letter-spacing:.1em;margin-bottom:.35rem}
-.ritem{background:var(--s2);border:1px solid var(--border);border-radius:5px;
-  padding:.35rem .55rem;font-size:.7rem;color:var(--text);margin-bottom:.2rem;
-  word-break:break-all;font-family:monospace}
-.ritem.hi{border-color:var(--green2);color:var(--green)}
+.rsec{margin-bottom:.8rem}
+.rsec h4{font-size:.65rem;font-weight:700;color:var(--red2);text-transform:uppercase;
+  letter-spacing:.12em;margin-bottom:.3rem;padding-bottom:.2rem;border-bottom:1px solid var(--border)}
+.ritem{background:var(--s2);border:1px solid var(--border);border-radius:4px;
+  padding:.3rem .5rem;font-size:.67rem;color:var(--text);margin-bottom:.18rem;
+  word-break:break-all;font-family:inherit}
+.ritem.hi{border-color:rgba(204,34,51,.4);color:var(--red3)}
 
-#chat-msgs{flex:1;overflow-y:auto;padding:.7rem;display:flex;flex-direction:column;gap:.7rem}
-#chat-msgs::-webkit-scrollbar{width:3px}
+/* AI Stream */
+#ai-stream-sec{font-size:.7rem;line-height:1.8;color:var(--text);white-space:pre-wrap;
+  padding:.3rem;background:rgba(204,34,51,.03);border:1px solid var(--border);
+  border-radius:4px;font-family:inherit}
+
+/* Chat */
+#chat-msgs{flex:1;overflow-y:auto;padding:.6rem;display:flex;flex-direction:column;gap:.6rem}
+#chat-msgs::-webkit-scrollbar{width:2px}
 #chat-msgs::-webkit-scrollbar-thumb{background:var(--border2)}
-.cm{max-width:92%;padding:.5rem .7rem;border-radius:8px;font-size:.76rem;
-  line-height:1.65;white-space:pre-wrap;word-break:break-word}
-.cm.user{align-self:flex-end;background:#0a2545;border:1px solid #1a4575;color:#c8e4ff}
-.cm.assistant{align-self:flex-start;background:var(--s2);border:1px solid var(--border2);color:var(--text)}
-#cinput-row{display:flex;gap:.4rem;padding:.55rem;border-top:1px solid var(--border);flex-shrink:0}
-#cinput{flex:1;background:var(--s2);border:1px solid var(--border2);border-radius:6px;
-  color:var(--text);font-size:.76rem;padding:.4rem .6rem;outline:none;font-family:inherit;resize:none}
-#cinput:focus{border-color:var(--green)}
-#csend{background:var(--green2);color:#000;border:none;border-radius:6px;
-  padding:.4rem .75rem;font-size:.75rem;font-weight:700;cursor:pointer}
-#csend:hover{background:var(--green)}
+.cm{max-width:92%;padding:.45rem .65rem;border-radius:7px;font-size:.74rem;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.cm.user{align-self:flex-end;background:#1c0408;border:1px solid var(--border2);color:#f0d0d5}
+.cm.assistant{align-self:flex-start;background:var(--s2);border:1px solid var(--border);color:var(--text)}
+#cinput-row{display:flex;gap:.35rem;padding:.5rem;border-top:1px solid var(--border);flex-shrink:0}
+#cinput{flex:1;background:var(--s2);border:1px solid var(--border2);border-radius:5px;
+  color:var(--text);font-size:.74rem;padding:.35rem .55rem;outline:none;font-family:inherit;resize:none}
+#cinput:focus{border-color:var(--red)}
+#csend{background:var(--acc);color:var(--red3);border:1px solid var(--red);border-radius:5px;
+  padding:.35rem .7rem;font-size:.72rem;font-weight:700;cursor:pointer;font-family:inherit}
+#csend:hover{background:var(--red);color:#fff}
 </style>
 </head>
 <body>
 
+<div id="feather-layer"></div>
+
 <div id="topbar">
-  <div class="logo"><span>&#x2B21;</span> OSINT NEXUS <span class="badge">NVIDIA NIM</span></div>
+  <div class="logo">
+    <svg width="28" height="22" viewBox="0 0 28 22" fill="var(--red2)">
+      <path d="M3 18 Q5 7 13 9 Q19 3 24 7 Q18 6 16 11 Q22 9 20 17 Q13 11 11 15 Q13 20 8 21 Q4 22 3 18Z" opacity=".9"/>
+      <circle cx="22" cy="7" r="1.8"/>
+      <path d="M8 21 Q6 19 5 17" stroke="var(--red2)" stroke-width="1" fill="none" opacity=".5"/>
+    </svg>
+    <span class="logo-name">RAVENS</span>
+    <span class="logo-sub">NVIDIA NIM NEXUS</span>
+  </div>
   <div class="pill"><span class="dot"></span>nemotron-ultra-550b</div>
-  <div class="right-bar"><button class="hbtn" onclick="clearAll()">Reset</button></div>
+  <div id="topbar-right">
+    <button class="tbtn" id="audioBtn" onclick="toggleAudio()">&#9834; AMBIENT</button>
+    <button class="tbtn" onclick="clearAll()">&#10006; RESET</button>
+  </div>
 </div>
 
 <div id="app">
+  <!-- LEFT -->
   <div id="left">
     <div id="lscroll">
-      <div class="slabel">Target</div>
-      <div class="field"><label>NAME / ALIAS</label><input id="i-name" placeholder="Ivan Petrov / darkwolf99"></div>
+      <div class="slabel">&#9670; ЦЕЛЬ РАССЛЕДОВАНИЯ</div>
+      <div class="field"><label>ИМЯ / ПСЕВДОНИМ</label><input id="i-name" placeholder="Ivan Petrov / darkwolf99"></div>
       <div class="field"><label>USERNAME</label><input id="i-user" placeholder="username / @handle"></div>
       <div class="field"><label>EMAIL</label><input id="i-email" type="email" placeholder="target@email.com"></div>
-      <div class="field"><label>DOMAIN / IP</label><input id="i-domain" placeholder="example.com / 8.8.8.8"></div>
+      <div class="field"><label>ДОМЕН / IP</label><input id="i-domain" placeholder="example.com / 8.8.8.8"></div>
 
-      <div class="slabel">Modules</div>
+      <div class="slabel">&#9670; МОДУЛИ</div>
       <div class="mods">
-        <div class="mod active" data-mod="sherlock"><span class="mi">[S]</span><span class="ml">Sherlock - 400+ sites</span><span class="ms"></span></div>
-        <div class="mod active" data-mod="maigret"><span class="mi">[M]</span><span class="ml">Maigret - profiles</span><span class="ms"></span></div>
-        <div class="mod active" data-mod="holehe"><span class="mi">[@]</span><span class="ml">Holehe - email lookup</span><span class="ms"></span></div>
-        <div class="mod active" data-mod="whois"><span class="mi">[W]</span><span class="ml">WHOIS / DNS</span><span class="ms"></span></div>
-        <div class="mod active" data-mod="ip"><span class="mi">[I]</span><span class="ml">IP Geolocation</span><span class="ms"></span></div>
-        <div class="mod active" data-mod="dorks"><span class="mi">[D]</span><span class="ml">Google Dorks</span><span class="ms"></span></div>
-        <div class="mod active" data-mod="ai"><span class="mi">[A]</span><span class="ml">AI Analysis (NIM)</span><span class="ms"></span></div>
+        <div class="mod active" data-mod="sherlock" onclick="clickModRow('sherlock')">
+          <span class="mi">&#9906;</span><span class="ml">Sherlock &mdash; 400+ сайтов</span><span class="ms"></span>
+        </div>
+        <div class="mod active" data-mod="maigret" onclick="clickModRow('maigret')">
+          <span class="mi">&#9676;</span><span class="ml">Maigret &mdash; профили</span><span class="ms"></span>
+        </div>
+        <div class="mod active" data-mod="holehe" onclick="clickModRow('holehe')">
+          <span class="mi">&#9993;</span><span class="ml">Holehe &mdash; email lookup</span><span class="ms"></span>
+        </div>
+        <div class="mod active" data-mod="whois" onclick="clickModRow('whois')">
+          <span class="mi">&#9670;</span><span class="ml">WHOIS / DNS</span><span class="ms"></span>
+        </div>
+        <div class="mod active" data-mod="ip" onclick="clickModRow('ip')">
+          <span class="mi">&#9830;</span><span class="ml">IP Геолокация</span><span class="ms"></span>
+        </div>
+        <div class="mod active" data-mod="dorks" onclick="clickModRow('dorks')">
+          <span class="mi">&#9903;</span><span class="ml">Google Dorks</span><span class="ms"></span>
+        </div>
+        <div class="mod active" data-mod="ai" onclick="clickModRow('ai')">
+          <span class="mi">&#9752;</span><span class="ml">Ravens AI &mdash; NIM Nemotron</span><span class="ms"></span>
+        </div>
       </div>
-      <button id="runBtn" onclick="startInvestigation()">&#9654; START INVESTIGATION</button>
+
+      <button id="runBtn" onclick="startInvestigation()">&#9654; НАЧАТЬ РАССЛЕДОВАНИЕ</button>
+
       <div class="stats">
-        <div class="stat"><div class="sv" id="s-found">0</div><div class="sk">Found</div></div>
-        <div class="stat"><div class="sv" id="s-mods">0/7</div><div class="sk">Modules</div></div>
-        <div class="stat"><div class="sv" id="s-time">0s</div><div class="sk">Time</div></div>
-        <div class="stat"><div class="sv" id="s-score" style="color:var(--yellow)">-</div><div class="sk">Level</div></div>
+        <div class="stat"><div class="sv" id="s-found">0</div><div class="sk">Найдено</div></div>
+        <div class="stat"><div class="sv" id="s-mods">0/7</div><div class="sk">Модулей</div></div>
+        <div class="stat"><div class="sv" id="s-time">0s</div><div class="sk">Время</div></div>
+        <div class="stat"><div class="sv" id="s-score" style="color:var(--textd)">&#8212;</div><div class="sk">Уровень</div></div>
       </div>
     </div>
   </div>
 
+  <!-- CENTER -->
   <div id="center">
     <canvas id="net-canvas"></canvas>
     <div id="hud">
-      <div id="target-display">OSINT NEXUS</div>
-      <div id="target-sub">Enter target data and start investigation</div>
+      <div id="target-display">RAVENS NEXUS</div>
+      <div id="target-sub">введите данные цели и запустите расследование</div>
     </div>
-    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <div id="prog-wrap"><div id="prog-fill"></div></div>
+
+    <!-- Node info panel -->
+    <div id="node-panel">
+      <div id="np-head">
+        <span id="np-icon">&#9752;</span>
+        <span id="np-name">MODULE</span>
+        <span id="np-status">IDLE</span>
+        <button id="np-close" onclick="closeNodePanel()">&#10005;</button>
+      </div>
+      <div id="np-desc" id="np-desc-text"></div>
+      <div id="np-items"></div>
+    </div>
   </div>
 
+  <!-- RIGHT -->
   <div id="right">
     <div id="tabs">
-      <div class="tab active" onclick="switchTab('log')">Console</div>
-      <div class="tab" onclick="switchTab('res')">Results</div>
-      <div class="tab" onclick="switchTab('chat')">AI Chat</div>
+      <div class="tab active" onclick="switchTab('log')">&#9670; КОНСОЛЬ</div>
+      <div class="tab" onclick="switchTab('res')">&#9830; ДАННЫЕ</div>
+      <div class="tab" onclick="switchTab('chat')">&#9752; AI ЧАТ</div>
     </div>
+
     <div class="panel show" id="panel-log">
-      <div id="log-out"><div class="ll info"><span class="lts">[INIT]</span>System ready. Enter target and start.</div></div>
+      <div id="log-out">
+        <div class="ll info"><span class="lts">[INIT]</span>Ravens Nexus готов. Введите цель.</div>
+      </div>
     </div>
+
     <div class="panel" id="panel-res">
-      <div id="res-content"><div style="color:var(--textd);font-size:.73rem;padding:.5rem">Results will appear here after investigation...</div></div>
+      <div id="res-panel">
+        <div id="res-toolbar">
+          <button class="rtbtn" onclick="openReport()">&#9670; Открыть отчёт</button>
+          <button class="rtbtn" onclick="clearResults()">&#10006; Очистить</button>
+        </div>
+        <div id="res-content">
+          <div style="color:var(--textd);font-size:.7rem;padding:.3rem">
+            Данные появятся после расследования...
+          </div>
+        </div>
+      </div>
     </div>
+
     <div class="panel" id="panel-chat">
       <div id="chat-msgs">
-        <div class="cm assistant">Hello! I am an AI OSINT analyst powered by NVIDIA NIM Nemotron. Ask me anything about OSINT or start an investigation and I will analyze the results automatically.</div>
+        <div class="cm assistant">Привет. Я Ravens AI — OSINT аналитик на базе NVIDIA NIM Nemotron-Ultra. Запусти расследование или задай вопрос.</div>
       </div>
       <div id="cinput-row">
-        <textarea id="cinput" rows="2" placeholder="Ask a question..."></textarea>
-        <button id="csend" onclick="sendChat()">&rarr;</button>
+        <textarea id="cinput" rows="2" placeholder="Задать вопрос..."></textarea>
+        <button id="csend" onclick="sendChat()">&#9658;</button>
       </div>
     </div>
   </div>
@@ -211,321 +340,472 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
 
 <script>
 // =====================================================
-// CANVAS 2D PSEUDO-3D NETWORK VISUALIZATION
+// CANVAS 3D NETWORK — CIRCULAR NODES
 // =====================================================
 var cv = document.getElementById('net-canvas');
 var cx = cv.getContext('2d');
 
 var NODES = [
-  {id:'target',  label:'TARGET',    col:'#00aaff', x3:0,   y3:0,   z3:0,   r:22},
-  {id:'sherlock',label:'SHERLOCK',  col:'#00ff88', x3:120, y3:-60, z3:40,  r:16},
-  {id:'maigret', label:'MAIGRET',   col:'#00dd77', x3:-110,y3:-80, z3:-30, r:16},
-  {id:'holehe',  label:'HOLEHE',    col:'#aa55ff', x3:100, y3:80,  z3:50,  r:16},
-  {id:'whois',   label:'WHOIS',     col:'#00aaff', x3:-120,y3:70,  z3:-20, r:16},
-  {id:'ip',      label:'IP GEO',    col:'#ff8c00', x3:50,  y3:130, z3:-60, r:16},
-  {id:'dorks',   label:'DORKS',     col:'#ffdd00', x3:-60, y3:-130,z3:60,  r:16},
-  {id:'ai',      label:'AI NIM',    col:'#76b947', x3:0,   y3:0,   z3:160, r:20},
+  {id:'target',  label:'TARGET',   col:'#cc2233', x3:0,   y3:0,   z3:0,   r:24, desc:'Цель расследования — узел-центр'},
+  {id:'sherlock',label:'SHERLOCK', col:'#ff4466', x3:120, y3:-55, z3:50,  r:17, desc:'Поиск на 400+ социальных сетях'},
+  {id:'maigret', label:'MAIGRET',  col:'#dd3355', x3:-115,y3:-75, z3:-35, r:17, desc:'Глубокий анализ профилей'},
+  {id:'holehe',  label:'HOLEHE',   col:'#ff6680', x3:100, y3:85,  z3:55,  r:17, desc:'Проверка email на 120+ сервисах'},
+  {id:'whois',   label:'WHOIS',    col:'#cc3344', x3:-125,y3:65,  z3:-25, r:17, desc:'WHOIS + DNS разведка'},
+  {id:'ip',      label:'IP GEO',   col:'#dd5544', x3:55,  y3:135, z3:-65, r:17, desc:'IP геолокация и данные ISP'},
+  {id:'dorks',   label:'DORKS',    col:'#ff7755', x3:-65, y3:-135,z3:65,  r:17, desc:'Google Dorks — расширенный поиск'},
+  {id:'ai',      label:'RAVENS AI',col:'#76b947', x3:0,   y3:0,   z3:170, r:22, desc:'NVIDIA NIM Nemotron-Ultra AI анализ'},
 ];
 
 var EDGES = [
   [0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],
-  [1,2],[2,3],[3,4],[4,5],[5,6],[6,1],[7,1],[7,3],[7,5]
+  [1,2],[2,3],[3,4],[4,5],[5,6],[6,1],
+  [7,1],[7,3],[7,5],[7,0]
 ];
 
 var NS = {};
-NODES.forEach(function(n){ NS[n.id] = {state:'idle'}; });
+NODES.forEach(function(n){ NS[n.id]={state:'idle',items:[]}; });
+
+var modResults = {};
+NODES.forEach(function(n){ modResults[n.id]=[]; });
 
 var parts = [];
-var rotY = 0.3, rotX = -0.2;
-var autoRot = true;
-var isDrag = false, prevX = 0, prevY = 0;
-var zoom = 1;
+var rotY=0.3, rotX=-0.15, zoom=1;
+var autoRot=true, isDrag=false, prevX=0, prevY=0;
+var lastPart=0;
+var activeNode=null;
 
-function project(x3, y3, z3) {
-  var x1 = x3*Math.cos(rotY) + z3*Math.sin(rotY);
-  var y1 = y3;
-  var z1 = -x3*Math.sin(rotY) + z3*Math.cos(rotY);
-  var x2 = x1;
-  var y2 = y1*Math.cos(rotX) - z1*Math.sin(rotX);
-  var z2 = y1*Math.sin(rotX) + z1*Math.cos(rotX);
-  var fov = 600;
-  var dz = fov + z2;
-  var scale = (fov / dz) * zoom;
-  return {x: cv.width/2 + x2*scale, y: cv.height/2 + y2*scale, z: z2, scale: scale};
+function project(x3,y3,z3){
+  var x1=x3*Math.cos(rotY)+z3*Math.sin(rotY);
+  var z1=-x3*Math.sin(rotY)+z3*Math.cos(rotY);
+  var y2=y3*Math.cos(rotX)-z1*Math.sin(rotX);
+  var z2=y3*Math.sin(rotX)+z1*Math.cos(rotX);
+  var fov=620, dz=fov+z2;
+  var sc=(fov/dz)*zoom;
+  return {x:cv.width/2+x1*sc, y:cv.height/2+y2*sc, z:z2, scale:sc};
 }
 
-function hexToRgb(hex) {
-  var r = parseInt(hex.slice(1,3),16);
-  var g = parseInt(hex.slice(3,5),16);
-  var b = parseInt(hex.slice(5,7),16);
-  return r+','+g+','+b;
+function hexRgb(h){
+  return parseInt(h.slice(1,3),16)+','+parseInt(h.slice(3,5),16)+','+parseInt(h.slice(5,7),16);
 }
 
-function drawNode(n, proj) {
-  var x = proj.x, y = proj.y, scale = proj.scale;
-  var r = n.r * scale;
-  var st = NS[n.id].state;
-  var col = n.col;
-  var rgb = hexToRgb(col);
-  var t = Date.now()/1000;
+function drawNode(n,p){
+  var x=p.x, y=p.y, sc=p.scale;
+  var r=n.r*sc;
+  var st=NS[n.id].state;
+  var col=n.col;
+  var rgb=hexRgb(col);
+  var t=Date.now()/1000;
+  var isActive=(n.id===activeNode);
 
-  var glowR = r * 1.8, glowA = 0.1;
-  if(st === 'running') { glowR = r*(2+0.5*Math.sin(t*8)); glowA = 0.35+0.2*Math.sin(t*6); }
-  else if(st === 'found') { glowR = r*(1.8+0.2*Math.sin(t*3)); glowA = 0.22+0.1*Math.sin(t*3); }
-  else if(st === 'error') { glowA = 0.25; }
+  // Outer glow
+  var ga=st==='running'?0.35+0.18*Math.sin(t*7):st==='found'?0.22:isActive?0.18:0.06;
+  var gr=r*(st==='running'?2.5:2.0);
+  var grd=cx.createRadialGradient(x,y,0,x,y,gr);
+  grd.addColorStop(0,'rgba('+rgb+','+ga+')');
+  grd.addColorStop(1,'rgba('+rgb+',0)');
+  cx.beginPath(); cx.arc(x,y,gr,0,Math.PI*2);
+  cx.fillStyle=grd; cx.fill();
 
-  var grd = cx.createRadialGradient(x,y,0,x,y,glowR);
-  var glowRgb = st === 'error' ? '255,51,51' : rgb;
-  grd.addColorStop(0, 'rgba('+glowRgb+','+glowA+')');
-  grd.addColorStop(1, 'rgba('+glowRgb+',0)');
-  cx.beginPath(); cx.arc(x,y,glowR,0,Math.PI*2);
-  cx.fillStyle = grd; cx.fill();
+  // Pulsing sonar rings when running
+  if(st==='running'){
+    for(var ri=0;ri<3;ri++){
+      var prog=(t*0.55+ri*0.333)%1;
+      var pr=r*(1+prog*2.8);
+      var pa=(1-prog)*0.5;
+      cx.beginPath(); cx.arc(x,y,pr,0,Math.PI*2);
+      cx.strokeStyle='rgba('+rgb+','+pa+')';
+      cx.lineWidth=1.2; cx.stroke();
+    }
+  }
 
-  var boxR = r * 0.9;
-  var angle = t * (st === 'running' ? 2 : 0.4);
-  cx.save();
-  cx.translate(x, y); cx.rotate(angle);
-  cx.beginPath(); cx.rect(-boxR,-boxR,boxR*2,boxR*2);
-  var fillA = st === 'running' ? 0.15 : st === 'found' ? 0.1 : 0.04;
-  cx.fillStyle = 'rgba('+rgb+','+fillA+')'; cx.fill();
-  var borderA = st === 'running' ? 0.9 : st === 'found' ? 0.8 : 0.3;
-  cx.strokeStyle = 'rgba('+rgb+','+borderA+')';
-  cx.lineWidth = (st === 'running' || st === 'found') ? 1.5 : 0.8;
+  // Main circle
+  cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2);
+  var fa=st==='found'?0.18:st==='running'?0.22:isActive?0.12:0.05;
+  cx.fillStyle='rgba('+rgb+','+fa+')'; cx.fill();
+  cx.strokeStyle='rgba('+rgb+','+(st!=='idle'||isActive?0.9:0.3)+')';
+  cx.lineWidth=st==='running'?2.5:isActive?2:1;
   cx.stroke();
-  cx.beginPath(); cx.rect(-boxR*0.5,-boxR*0.5,boxR,boxR);
-  cx.strokeStyle = 'rgba('+rgb+','+(borderA*0.35)+')';
-  cx.lineWidth = 0.5; cx.stroke();
-  cx.restore();
 
-  cx.font = 'bold '+Math.max(8, r*0.45)+'px monospace';
-  cx.textAlign = 'center'; cx.textBaseline = 'middle';
-  var labelCol = st === 'found' ? col : (st === 'running' ? '#ffdd00' : 'rgba(160,200,220,0.8)');
-  cx.fillStyle = labelCol;
-  if(st === 'found' || st === 'running') { cx.shadowColor = col; cx.shadowBlur = 8; }
-  cx.fillText(n.label, x, y);
-  cx.shadowBlur = 0;
+  // Inner decorative ring
+  cx.beginPath(); cx.arc(x,y,r*0.55,0,Math.PI*2);
+  cx.strokeStyle='rgba('+rgb+',0.12)'; cx.lineWidth=0.6; cx.stroke();
 
-  if(st !== 'idle') {
-    cx.font = Math.max(7, r*0.35)+'px monospace';
-    cx.fillStyle = 'rgba(160,200,220,0.5)';
-    cx.textBaseline = 'top';
-    cx.fillText('['+st.toUpperCase()+']', x, y + r + 3*scale);
+  // Cross-hair center dot when active
+  if(st!=='idle'||isActive){
+    cx.beginPath(); cx.arc(x,y,r*0.1,0,Math.PI*2);
+    cx.fillStyle='rgba('+rgb+',0.6)'; cx.fill();
+  }
+
+  // Label
+  var fs=Math.max(8,r*0.46);
+  cx.font='900 '+fs+'px "Courier New",monospace';
+  cx.textAlign='center'; cx.textBaseline='middle';
+  cx.shadowColor=col; cx.shadowBlur=st!=='idle'?14:isActive?10:0;
+  cx.fillStyle=st==='found'?col:st==='running'?'#ffcc44':isActive?col:'rgba(224,184,189,0.75)';
+  cx.fillText(n.label,x,y);
+  cx.shadowBlur=0;
+
+  // Status tag
+  if(st!=='idle'){
+    var tag=st==='running'?'SCAN':st==='found'?'DONE':st==='error'?'ERR':'?';
+    cx.font=Math.max(6,r*0.28)+'px "Courier New"';
+    cx.fillStyle='rgba('+rgb+',0.5)';
+    cx.textBaseline='top';
+    cx.fillText('['+tag+']',x,y+r+2*sc);
+  }
+
+  // Click ring
+  if(isActive){
+    cx.beginPath(); cx.arc(x,y,r+5,0,Math.PI*2);
+    cx.strokeStyle='rgba('+rgb+',0.7)';
+    cx.lineWidth=1; cx.setLineDash([4,4]);
+    cx.stroke(); cx.setLineDash([]);
   }
 }
 
-function drawEdge(a, b, pA, pB) {
-  var aOn = NS[a.id].state === 'running' || NS[a.id].state === 'found';
-  var bOn = NS[b.id].state === 'running' || NS[b.id].state === 'found';
-  var active = aOn || bOn;
-  var t = Date.now()/1000;
-  var alpha = active ? (0.4+0.2*Math.sin(t*4)) : 0.07;
-  var col = active ? (bOn ? b.col : a.col) : '#0a2535';
-  cx.beginPath();
-  cx.moveTo(pA.x, pA.y); cx.lineTo(pB.x, pB.y);
-  cx.strokeStyle = active ? col+'99' : col;
-  cx.lineWidth = active ? 1.2 : 0.5;
-  cx.setLineDash(active ? [] : [4,8]);
+function drawEdge(a,b,pA,pB){
+  var aOn=NS[a.id].state!=='idle', bOn=NS[b.id].state!=='idle';
+  var active=aOn||bOn;
+  var t=Date.now()/1000;
+  var col=active?(NS[b.id].state!=='idle'?b.col:a.col):'#1a0306';
+  cx.beginPath(); cx.moveTo(pA.x,pA.y); cx.lineTo(pB.x,pB.y);
+  cx.strokeStyle=active?col+'66':col;
+  cx.lineWidth=active?1.2:0.4;
+  cx.setLineDash(active?[]:[3,9]);
   cx.stroke(); cx.setLineDash([]);
 }
 
-var lastPart = 0;
-function spawnParticle(from, to) {
-  parts.push({from:from, to:to, t:0, speed:0.007+Math.random()*0.007, col:to.col});
+function spawnPart(from,to){
+  parts.push({fx:from.x3,fy:from.y3,fz:from.z3,tx:to.x3,ty:to.y3,tz:to.z3,t:0,
+    speed:0.006+Math.random()*0.008,col:to.col});
 }
 
-function drawParticles() {
-  for(var i = parts.length-1; i >= 0; i--) {
-    var p = parts[i];
-    p.t += p.speed;
-    if(p.t >= 1) { parts.splice(i,1); continue; }
-    var pA = project(p.from.x3,p.from.y3,p.from.z3);
-    var pB = project(p.to.x3,p.to.y3,p.to.z3);
-    var px = pA.x+(pB.x-pA.x)*p.t;
-    var py = pA.y+(pB.y-pA.y)*p.t;
-    var alpha = (1-p.t*0.8);
-    var rgb = hexToRgb(p.col);
-    cx.beginPath(); cx.arc(px,py,2.5,0,Math.PI*2);
-    cx.fillStyle = 'rgba('+rgb+','+alpha+')'; cx.fill();
-    var t2 = Math.max(0,p.t-0.06);
-    var px2 = pA.x+(pB.x-pA.x)*t2, py2 = pA.y+(pB.y-pA.y)*t2;
+function drawParts(){
+  for(var i=parts.length-1;i>=0;i--){
+    var p=parts[i]; p.t+=p.speed;
+    if(p.t>=1){parts.splice(i,1);continue;}
+    var pA=project(p.fx,p.fy,p.fz), pB=project(p.tx,p.ty,p.tz);
+    var px=pA.x+(pB.x-pA.x)*p.t, py=pA.y+(pB.y-pA.y)*p.t;
+    var t2=Math.max(0,p.t-0.08);
+    var px2=pA.x+(pB.x-pA.x)*t2, py2=pA.y+(pB.y-pA.y)*t2;
+    var al=1-p.t*0.8;
+    var rgb=hexRgb(p.col);
+    cx.beginPath(); cx.arc(px,py,2.8,0,Math.PI*2);
+    cx.fillStyle='rgba('+rgb+','+al+')'; cx.fill();
     cx.beginPath(); cx.moveTo(px,py); cx.lineTo(px2,py2);
-    cx.strokeStyle = 'rgba('+rgb+','+(alpha*0.35)+')';
-    cx.lineWidth = 1.5; cx.stroke();
+    cx.strokeStyle='rgba('+rgb+','+(al*0.3)+')';
+    cx.lineWidth=1.5; cx.stroke();
   }
 }
 
-var stars = [];
-for(var i = 0; i < 180; i++) {
-  stars.push({x:(Math.random()-0.5)*800,y:(Math.random()-0.5)*800,z:(Math.random()-0.5)*400,s:Math.random()*1.5});
+var STARS=[];
+for(var si=0;si<200;si++){
+  STARS.push({x:(Math.random()-0.5)*900,y:(Math.random()-0.5)*900,z:(Math.random()-0.5)*500,
+    s:Math.random()*1.2,c:Math.random()});
 }
 
-function drawStars() {
-  for(var i = 0; i < stars.length; i++) {
-    var s = stars[i];
-    var p = project(s.x,s.y,s.z);
+function drawStars(){
+  for(var i=0;i<STARS.length;i++){
+    var s=STARS[i], p=project(s.x,s.y,s.z);
     if(p.x<0||p.x>cv.width||p.y<0||p.y>cv.height) continue;
-    cx.beginPath(); cx.arc(p.x,p.y,s.s*p.scale*0.3,0,Math.PI*2);
-    cx.fillStyle = 'rgba(30,70,100,'+(0.4*p.scale)+')'; cx.fill();
+    var a=0.15+s.c*0.2;
+    cx.beginPath(); cx.arc(p.x,p.y,s.s*p.scale*0.25,0,Math.PI*2);
+    cx.fillStyle='rgba(100,20,30,'+a+')'; cx.fill();
   }
 }
 
-function render() {
+function render(){
   requestAnimationFrame(render);
-  var W = cv.width, H = cv.height;
-  if(autoRot) rotY += 0.004;
+  var W=cv.width, H=cv.height;
+  if(autoRot) rotY+=0.0035;
+
   cx.clearRect(0,0,W,H);
-  var bg = cx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)/1.5);
-  bg.addColorStop(0,'rgba(5,12,20,1)');
-  bg.addColorStop(1,'rgba(2,5,8,1)');
-  cx.fillStyle = bg; cx.fillRect(0,0,W,H);
+  var bg=cx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)/1.4);
+  bg.addColorStop(0,'rgba(14,2,3,1)');
+  bg.addColorStop(1,'rgba(5,0,1,1)');
+  cx.fillStyle=bg; cx.fillRect(0,0,W,H);
+
   drawStars();
 
-  var projs = NODES.map(function(n){ return project(n.x3,n.y3,n.z3); });
-  var order = NODES.map(function(_,i){ return i; }).sort(function(a,b){ return projs[a].z-projs[b].z; });
+  var projs=NODES.map(function(n){return project(n.x3,n.y3,n.z3);});
+  var order=NODES.map(function(_,i){return i;}).sort(function(a,b){return projs[a].z-projs[b].z;});
 
-  for(var ei = 0; ei < EDGES.length; ei++) {
-    drawEdge(NODES[EDGES[ei][0]], NODES[EDGES[ei][1]], projs[EDGES[ei][0]], projs[EDGES[ei][1]]);
-  }
+  EDGES.forEach(function(e){drawEdge(NODES[e[0]],NODES[e[1]],projs[e[0]],projs[e[1]]);});
 
-  var now = Date.now();
-  if(now - lastPart > 130) {
-    for(var ei2 = 0; ei2 < EDGES.length; ei2++) {
-      var a = NODES[EDGES[ei2][0]], b = NODES[EDGES[ei2][1]];
-      if((NS[a.id].state==='running'||NS[a.id].state==='found')&&
-         (NS[b.id].state==='running'||NS[b.id].state==='found')) {
-        if(Math.random()<0.4) spawnParticle(a,b);
-        if(Math.random()<0.2) spawnParticle(b,a);
+  var now=Date.now();
+  if(now-lastPart>120){
+    EDGES.forEach(function(e){
+      var a=NODES[e[0]], b=NODES[e[1]];
+      if(NS[a.id].state!=='idle'&&NS[b.id].state!=='idle'){
+        if(Math.random()<0.45) spawnPart(a,b);
+        if(Math.random()<0.2) spawnPart(b,a);
       }
-    }
-    lastPart = now;
+    });
+    lastPart=now;
   }
 
-  drawParticles();
-  for(var oi = 0; oi < order.length; oi++) drawNode(NODES[order[oi]], projs[order[oi]]);
+  drawParts();
+  order.forEach(function(i){drawNode(NODES[i],projs[i]);});
+}
 
-  var anyRunning = false;
-  for(var key in NS) { if(NS[key].state==='running') { anyRunning=true; break; } }
-  if(anyRunning) {
-    var t = Date.now()/1000;
-    var cp = projs[0];
-    for(var ri = 0; ri < 3; ri++) {
-      var prog = (t*0.6+ri*0.333)%1;
-      var rad = 30+prog*110;
-      var alpha2 = (1-prog)*0.28;
-      cx.beginPath(); cx.arc(cp.x,cp.y,rad,0,Math.PI*2);
-      cx.strokeStyle = 'rgba(0,170,255,'+alpha2+')';
-      cx.lineWidth = 1; cx.stroke();
-    }
+function resize(){
+  var c=document.getElementById('center');
+  cv.width=c.clientWidth; cv.height=c.clientHeight;
+}
+window.addEventListener('resize',resize); resize(); render();
+
+// ── Canvas mouse events ──────────────────────────
+cv.addEventListener('mousedown',function(e){isDrag=false;prevX=e.clientX;prevY=e.clientY;});
+window.addEventListener('mousemove',function(e){
+  if(e.buttons&&Math.abs(e.clientX-prevX)+Math.abs(e.clientY-prevY)>3){
+    isDrag=true; autoRot=false;
+    rotY+=(e.clientX-prevX)*0.007; rotX+=(e.clientY-prevY)*0.007;
+    prevX=e.clientX; prevY=e.clientY;
+    cv.classList.add('dragging');
   }
-}
-
-function resize() {
-  var c = document.getElementById('center');
-  cv.width = c.clientWidth; cv.height = c.clientHeight;
-}
-window.addEventListener('resize', resize); resize(); render();
-
-cv.addEventListener('mousedown', function(e){ isDrag=true; autoRot=false; prevX=e.clientX; prevY=e.clientY; });
-window.addEventListener('mouseup', function(){ isDrag=false; setTimeout(function(){ autoRot=true; },4000); });
-window.addEventListener('mousemove', function(e){
-  if(!isDrag) return;
-  rotY += (e.clientX-prevX)*0.008; rotX += (e.clientY-prevY)*0.008;
-  prevX=e.clientX; prevY=e.clientY;
 });
-cv.addEventListener('wheel', function(e){ zoom=Math.max(0.4,Math.min(2.5,zoom-e.deltaY*0.001)); });
+window.addEventListener('mouseup',function(){
+  cv.classList.remove('dragging');
+  setTimeout(function(){autoRot=true;},5000);
+});
+cv.addEventListener('wheel',function(e){
+  e.preventDefault();
+  zoom=Math.max(0.35,Math.min(2.8,zoom-e.deltaY*0.001));
+},{passive:false});
+
+cv.addEventListener('click',function(e){
+  if(isDrag) return;
+  var rect=cv.getBoundingClientRect();
+  var mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  var projs=NODES.map(function(n){return project(n.x3,n.y3,n.z3);});
+  var hit=null;
+  NODES.forEach(function(n,i){
+    var p=projs[i], r=(n.r*p.scale)+12;
+    var dx=mx-p.x, dy=my-p.y;
+    if(dx*dx+dy*dy<r*r) hit=n;
+  });
+  if(hit){activeNode=hit.id; showNodePanel(hit);}
+  else if(!document.getElementById('node-panel').contains(e.target)){
+    activeNode=null; closeNodePanel();
+  }
+});
+
+function showNodePanel(node){
+  var st=NS[node.id].state;
+  document.getElementById('np-icon').textContent=
+    {target:'[T]',sherlock:'[S]',maigret:'[M]',holehe:'[@]',
+     whois:'[W]',ip:'[I]',dorks:'[D]',ai:'[A]'}[node.id]||'[?]';
+  document.getElementById('np-name').textContent=node.label;
+  document.getElementById('np-status').textContent='['+st.toUpperCase()+']';
+  document.getElementById('np-desc').textContent=node.desc;
+  var cont=document.getElementById('np-items');
+  cont.innerHTML='';
+  var items=modResults[node.id]||[];
+  if(items.length===0){
+    var d=document.createElement('div'); d.className='np-item';
+    d.style.color='var(--textd)'; d.textContent='Нет данных';
+    cont.appendChild(d);
+  } else {
+    items.slice(0,30).forEach(function(txt){
+      var d=document.createElement('div'); d.className='np-item hi'; d.textContent=txt;
+      cont.appendChild(d);
+    });
+    if(items.length>30){
+      var d=document.createElement('div'); d.className='np-item';
+      d.style.color='var(--textd)'; d.textContent='...ещё '+(items.length-30)+' записей';
+      cont.appendChild(d);
+    }
+  }
+  document.getElementById('node-panel').classList.add('show');
+}
+
+function closeNodePanel(){
+  document.getElementById('node-panel').classList.remove('show');
+}
+
+// =====================================================
+// FEATHERS
+// =====================================================
+(function spawnFeathers(){
+  var layer=document.getElementById('feather-layer');
+  for(var i=0;i<30;i++){
+    var f=document.createElement('div');
+    f.className='feather';
+    var dur=9+Math.random()*14;
+    var delay=-Math.random()*dur;
+    var left=Math.random()*102;
+    var rot=(Math.random()*60-30);
+    var opacity=0.3+Math.random()*0.45;
+    f.style.cssText='left:'+left+'vw;animation-duration:'+dur+'s;animation-delay:'+delay+'s;'+
+      '--fr:'+rot+'deg;--fo:'+opacity+';width:'+(2+Math.random()*2)+'px;height:'+(12+Math.random()*12)+'px';
+    layer.appendChild(f);
+  }
+})();
+
+// =====================================================
+// WEB AUDIO — DARK AMBIENT
+// =====================================================
+var audioCtx=null, audioOn=false, masterGain=null;
+
+function buildAmbient(){
+  if(audioCtx) return;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  masterGain=audioCtx.createGain();
+  masterGain.gain.value=0;
+  masterGain.connect(audioCtx.destination);
+
+  // Build synthetic reverb impulse
+  var sec=3, sr=audioCtx.sampleRate;
+  var impulse=audioCtx.createBuffer(2,sec*sr,sr);
+  for(var ch=0;ch<2;ch++){
+    var d=impulse.getChannelData(ch);
+    for(var s=0;s<d.length;s++) d[s]=(Math.random()*2-1)*Math.pow(1-s/d.length,2.5);
+  }
+  var reverb=audioCtx.createConvolver();
+  reverb.buffer=impulse;
+  reverb.connect(masterGain);
+
+  var filt=audioCtx.createBiquadFilter();
+  filt.type='lowpass'; filt.frequency.value=280; filt.Q.value=3;
+  filt.connect(reverb); filt.connect(masterGain);
+
+  // LFO for subtle movement
+  var lfo=audioCtx.createOscillator();
+  var lfoGain=audioCtx.createGain();
+  lfo.frequency.value=0.08; lfoGain.gain.value=15;
+  lfo.connect(lfoGain); lfoGain.connect(filt.frequency);
+  lfo.start();
+
+  // Drone oscillators — A minor intervals
+  [{f:55,v:0.18},{f:82.4,v:0.12},{f:110,v:0.09},{f:130.8,v:0.06},{f:164.8,v:0.04}].forEach(function(o,i){
+    var osc=audioCtx.createOscillator();
+    osc.type=['sawtooth','triangle','sawtooth','sine','triangle'][i];
+    osc.frequency.value=o.f;
+    var g=audioCtx.createGain(); g.gain.value=o.v;
+    // micro-detune for warmth
+    var d=audioCtx.createOscillator();
+    d.type='sawtooth'; d.frequency.value=o.f*1.003;
+    var dg=audioCtx.createGain(); dg.gain.value=o.v*0.4;
+    osc.connect(g); g.connect(filt);
+    d.connect(dg); dg.connect(filt);
+    osc.start(); d.start();
+  });
+}
+
+function toggleAudio(){
+  var btn=document.getElementById('audioBtn');
+  if(!audioCtx) buildAmbient();
+  audioCtx.resume();
+  audioOn=!audioOn;
+  masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+  masterGain.gain.linearRampToValueAtTime(audioOn?0.08:0, audioCtx.currentTime+1.5);
+  btn.classList.toggle('on', audioOn);
+  btn.textContent=audioOn?'&#9834; AMBIENT ON':'&#9834; AMBIENT';
+  btn.innerHTML=(audioOn?'&#9834; AMBIENT ON':'&#9834; AMBIENT');
+}
 
 // =====================================================
 // UI STATE
 // =====================================================
-var foundCount=0, doneModules=0, startTime=0, timerInt=null, chatHist=[];
+var foundCount=0, doneCount=0, startTime=0, timerInt=null, chatHist=[];
+var TOTAL_MODS=7;
+var allResults={};
 
-function setNodeState(id, state) {
-  if(NS[id]) NS[id].state = state;
-  var mod = document.querySelector('[data-mod="'+id+'"]');
-  if(mod) mod.className = 'mod active '+state;
+function setNodeState(id,state){
+  if(!NS[id]) return;
+  NS[id].state=state;
+  var mod=document.querySelector('[data-mod="'+id+'"]');
+  if(mod){
+    mod.className='mod active '+state;
+    if(state==='found') mod.className='mod active found';
+    if(state==='running') mod.className='mod active running';
+    if(state==='error') mod.className='mod active error';
+  }
+  if(activeNode===id) {
+    var n=NODES.find(function(x){return x.id===id;});
+    if(n) showNodePanel(n);
+  }
 }
 
-function addLog(type, text) {
-  var el = document.getElementById('log-out');
-  var d = document.createElement('div');
-  d.className = 'll '+type;
-  var now = new Date();
-  var h = now.getHours().toString().padStart(2,'0');
-  var m = now.getMinutes().toString().padStart(2,'0');
-  var s = now.getSeconds().toString().padStart(2,'0');
-  var ts = h+':'+m+':'+s;
-  var safe = String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  d.innerHTML = '<span class="lts">['+ts+']</span>'+safe;
+function ts(){
+  var now=new Date();
+  return ('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2)+':'+('0'+now.getSeconds()).slice(-2);
+}
+
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function addLog(type,text){
+  var el=document.getElementById('log-out');
+  var d=document.createElement('div'); d.className='ll '+type;
+  d.innerHTML='<span class="lts">['+ts()+']</span>'+escH(text);
   el.appendChild(d);
-  el.scrollTop = el.scrollHeight;
+  if(el.scrollTop>el.scrollHeight-el.clientHeight-60) el.scrollTop=el.scrollHeight;
 }
 
-function addResult(mod, text, hi) {
-  var sec = document.getElementById('rs-'+mod);
-  if(!sec) {
-    var rc = document.getElementById('res-content');
-    if(rc.children.length === 1 && rc.firstChild && rc.firstChild.tagName !== 'DIV') rc.innerHTML='';
-    var icons = {sherlock:'[S]',maigret:'[M]',holehe:'[@]',whois:'[W]',dns:'[W]',ip:'[I]',dorks:'[D]',ai:'[A]'};
-    var wrap = document.createElement('div'); wrap.className='rsec';
-    wrap.innerHTML = '<h4>'+(icons[mod]||'*')+' '+mod.toUpperCase()+'</h4>';
-    sec = document.createElement('div'); sec.id='rs-'+mod;
+function addResult(mod,text){
+  if(!allResults[mod]) allResults[mod]=[];
+  allResults[mod].push(text);
+  if(!modResults[mod]) modResults[mod]=[];
+  modResults[mod].push(text);
+
+  var sec=document.getElementById('rs-'+mod);
+  if(!sec){
+    var rc=document.getElementById('res-content');
+    if(rc.firstChild&&rc.firstChild.style&&rc.firstChild.style.color==='var(--textd)') rc.innerHTML='';
+    var icons={sherlock:'[S]',maigret:'[M]',holehe:'[@]',whois:'[W]',dns:'[W]',ip:'[I]',dorks:'[D]',ai:'[A]'};
+    var label={sherlock:'SHERLOCK',maigret:'MAIGRET',holehe:'HOLEHE',whois:'WHOIS/DNS',
+                dns:'WHOIS/DNS',ip:'IP GEO',dorks:'DORKS',ai:'RAVENS AI'}[mod]||(mod.toUpperCase());
+    var wrap=document.createElement('div'); wrap.className='rsec';
+    wrap.innerHTML='<h4>'+(icons[mod]||'*')+' '+label+'</h4>';
+    sec=document.createElement('div'); sec.id='rs-'+mod;
     wrap.appendChild(sec); rc.appendChild(wrap);
   }
-  var item = document.createElement('div');
-  item.className = 'ritem'+(hi?' hi':'');
-  item.textContent = text; sec.appendChild(item);
+  var item=document.createElement('div'); item.className='ritem hi';
+  item.textContent=text; sec.appendChild(item);
 }
 
-function switchTab(t) {
-  var tabEls = document.querySelectorAll('.tab');
-  var panels = ['panel-log','panel-res','panel-chat'];
-  var names = ['log','res','chat'];
-  for(var i=0;i<tabEls.length;i++) tabEls[i].classList.toggle('active', names[i]===t);
-  for(var j=0;j<panels.length;j++) document.getElementById(panels[j]).classList.toggle('show', names[j]===t);
+function switchTab(t){
+  var names=['log','res','chat'];
+  document.querySelectorAll('.tab').forEach(function(el,i){el.classList.toggle('active',names[i]===t);});
+  names.forEach(function(n){document.getElementById('panel-'+n).classList.toggle('show',n===t);});
 }
 
-function clearAll() {
-  foundCount=0; doneModules=0;
-  document.getElementById('log-out').innerHTML='<div class="ll info"><span class="lts">[RESET]</span>System reset.</div>';
-  document.getElementById('res-content').innerHTML='<div style="color:var(--textd);font-size:.73rem;padding:.5rem">Results will appear here...</div>';
-  document.getElementById('target-display').textContent='OSINT NEXUS';
-  document.getElementById('target-sub').textContent='Enter target data and start investigation';
-  document.getElementById('progress-fill').style.width='0';
-  document.getElementById('s-found').textContent='0';
-  document.getElementById('s-mods').textContent='0/7';
-  document.getElementById('s-time').textContent='0s';
-  document.getElementById('s-score').textContent='-';
-  clearInterval(timerInt);
-  NODES.forEach(function(n){ NS[n.id].state='idle'; });
-  document.getElementById('runBtn').disabled=false;
-  document.getElementById('runBtn').classList.remove('scanning');
-  document.getElementById('runBtn').textContent='> START INVESTIGATION';
-  var existing = document.getElementById('ai-stream');
-  if(existing) existing.parentNode.parentNode.remove();
+function clickModRow(id){
+  var n=NODES.find(function(x){return x.id===id;});
+  if(n){activeNode=id; showNodePanel(n);}
 }
 
-async function startInvestigation() {
+// =====================================================
+// INVESTIGATION
+// =====================================================
+async function startInvestigation(){
   var name=document.getElementById('i-name').value.trim();
   var user=document.getElementById('i-user').value.trim();
   var email=document.getElementById('i-email').value.trim();
   var domain=document.getElementById('i-domain').value.trim();
-  if(!name&&!user&&!email&&!domain){addLog('error','Enter at least one field!');return;}
+  if(!name&&!user&&!email&&!domain){addLog('error','Введите хотя бы одно поле!'); return;}
 
   clearAll();
   var target=[name,user,email,domain].filter(Boolean).join(' / ');
-  document.getElementById('target-display').textContent=target.toUpperCase().substring(0,40);
-  document.getElementById('target-sub').textContent='[ACTIVE] SCANNING...';
+  document.getElementById('target-display').textContent=target.toUpperCase().substring(0,45);
+  document.getElementById('target-sub').textContent='[ACTIVE] СКАНИРОВАНИЕ...';
   document.getElementById('runBtn').disabled=true;
   document.getElementById('runBtn').classList.add('scanning');
-  document.getElementById('runBtn').textContent='SCANNING...';
+  document.getElementById('runBtn').textContent='СКАНИРОВАНИЕ...';
   setNodeState('target','found');
   startTime=Date.now();
-  timerInt=setInterval(function(){document.getElementById('s-time').textContent=Math.round((Date.now()-startTime)/1000)+'s';},500);
+  timerInt=setInterval(function(){
+    document.getElementById('s-time').textContent=Math.round((Date.now()-startTime)/1000)+'s';
+  },500);
   switchTab('log');
 
-  var resp=await fetch('/investigate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,user:user,email:email,domain:domain})});
-  var reader=resp.body.getReader(), dec=new TextDecoder();
-  var buf='';
+  var resp=await fetch('/investigate',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:name,user:user,email:email,domain:domain})
+  });
+
+  var reader=resp.body.getReader(), dec=new TextDecoder(), buf='';
   while(true){
     var rd=await reader.read();
     if(rd.done) break;
@@ -541,38 +821,196 @@ async function startInvestigation() {
 
   clearInterval(timerInt);
   var elapsed=Math.round((Date.now()-startTime)/1000);
-  document.getElementById('target-sub').textContent='DONE in '+elapsed+'s';
+  document.getElementById('target-sub').textContent='ЗАВЕРШЕНО за '+elapsed+'s';
   document.getElementById('runBtn').disabled=false;
   document.getElementById('runBtn').classList.remove('scanning');
-  document.getElementById('runBtn').textContent='> NEW INVESTIGATION';
-  var score=foundCount>20?'HIGH':foundCount>5?'MED':'LOW';
+  document.getElementById('runBtn').textContent='> НОВОЕ РАССЛЕДОВАНИЕ';
+
+  var lvl=foundCount>25?'ВЫСОКИЙ':foundCount>8?'СРЕДНИЙ':'НИЗКИЙ';
   var scoreEl=document.getElementById('s-score');
-  scoreEl.textContent=score;
-  scoreEl.style.color=foundCount>20?'var(--red)':foundCount>5?'var(--yellow)':'var(--green)';
-  addLog('done','Done. Found: '+foundCount+' records in '+elapsed+'s.');
+  scoreEl.textContent=lvl;
+  scoreEl.style.color=foundCount>25?'var(--red2)':foundCount>8?'var(--warn)':'var(--info)';
+
+  addLog('done','Расследование завершено. Найдено: '+foundCount+' записей за '+elapsed+'s');
   switchTab('res');
 }
 
-function handleEvent(ev) {
-  var mod=ev.module, type=ev.type, text=ev.text;
-  if(type==='running'){setNodeState(mod,'running');addLog('running',text);return;}
-  if(type==='done'){setNodeState(mod,'found');doneModules++;document.getElementById('s-mods').textContent=doneModules+'/7';
-    document.getElementById('progress-fill').style.width=(doneModules/7*100)+'%';addLog('done',text);return;}
-  if(type==='error'){setNodeState(mod,'error');addLog('error',text);return;}
-  if(type==='info'){addLog('info',text);return;}
-  if(type==='found'){foundCount++;document.getElementById('s-found').textContent=foundCount;addLog('found',text);addResult(mod,text,true);return;}
-  if(type==='stream'){
-    var el=document.getElementById('ai-stream');
-    if(!el){
-      var rc=document.getElementById('res-content');
-      var sec=document.createElement('div');sec.className='rsec';
-      sec.innerHTML='<h4>[A] AI ANALYSIS</h4>';
-      el=document.createElement('div');el.id='ai-stream';
-      el.style.cssText='font-size:.72rem;line-height:1.7;color:#b0d8ff;white-space:pre-wrap;padding:.3rem;';
-      sec.appendChild(el);rc.appendChild(sec);switchTab('res');
-    }
-    el.textContent+=text;el.scrollIntoView({block:'end'});
+var doneModIds={};
+function handleEvent(ev){
+  var mod=ev.module, type=ev.type, text=ev.text||'';
+  var dispMod=(mod==='dns')?'whois':mod;
+
+  if(type==='running'){
+    setNodeState(dispMod,'running');
+    addLog('running','['+dispMod.toUpperCase()+'] '+text);
+    return;
   }
+  if(type==='done'){
+    if(!doneModIds[dispMod]){
+      doneModIds[dispMod]=true;
+      setNodeState(dispMod,'found');
+      doneCount++;
+      document.getElementById('s-mods').textContent=doneCount+'/'+TOTAL_MODS;
+      document.getElementById('prog-fill').style.width=(doneCount/TOTAL_MODS*100)+'%';
+    }
+    addLog('done','['+dispMod.toUpperCase()+'] '+text);
+    return;
+  }
+  if(type==='error'){
+    setNodeState(dispMod,'error');
+    addLog('error','['+dispMod.toUpperCase()+'] '+text);
+    return;
+  }
+  if(type==='info'){
+    addLog('info',text);
+    return;
+  }
+  if(type==='found'){
+    foundCount++;
+    document.getElementById('s-found').textContent=foundCount;
+    addLog('found','['+dispMod.toUpperCase()+'] '+text);
+    addResult(dispMod, text);
+    return;
+  }
+  if(type==='stream'){
+    var sec=document.getElementById('ai-stream-sec');
+    if(!sec){
+      var rc=document.getElementById('res-content');
+      var wrap=document.createElement('div'); wrap.className='rsec';
+      wrap.innerHTML='<h4>[A] RAVENS AI ANALYSIS</h4>';
+      sec=document.createElement('div'); sec.id='ai-stream-sec'; sec.className='';
+      sec.style.cssText='font-size:.7rem;line-height:1.85;color:var(--text);white-space:pre-wrap;'+
+        'padding:.4rem;background:rgba(204,34,51,.03);border:1px solid var(--border);border-radius:4px;font-family:inherit';
+      wrap.appendChild(sec); rc.appendChild(wrap);
+      switchTab('res');
+    }
+    sec.textContent+=text;
+    sec.scrollIntoView({block:'end',behavior:'smooth'});
+    // also store for report
+    if(!allResults['ai']) allResults['ai']=[];
+    if(allResults['ai'].length===0||typeof allResults['ai'][allResults['ai'].length-1]!=='string')
+      allResults['ai'].push('');
+    allResults['ai'][allResults['ai'].length-1]+=text;
+  }
+}
+
+// =====================================================
+// REPORT — opens in new tab
+// =====================================================
+function openReport(){
+  var target=document.getElementById('target-display').textContent;
+  var elapsed=document.getElementById('s-time').textContent;
+  var found=document.getElementById('s-found').textContent;
+  var score=document.getElementById('s-score').textContent;
+
+  var modDefs=[
+    {id:'sherlock',label:'Sherlock',desc:'Поиск username на 400+ платформах'},
+    {id:'maigret', label:'Maigret', desc:'Глубокий анализ профилей'},
+    {id:'holehe',  label:'Holehe',  desc:'Проверка email на 120+ сервисах'},
+    {id:'whois',   label:'WHOIS/DNS',desc:'WHOIS и DNS разведка'},
+    {id:'ip',      label:'IP Geo',  desc:'IP геолокация'},
+    {id:'dorks',   label:'Google Dorks',desc:'Расширенный Google поиск'},
+    {id:'ai',      label:'Ravens AI',desc:'NVIDIA NIM Nemotron-Ultra анализ'},
+  ];
+
+  var sections='';
+  modDefs.forEach(function(m){
+    var items=allResults[m.id]||[];
+    if(items.length===0) return;
+    var rows=items.map(function(it){
+      var isAI=(m.id==='ai');
+      if(isAI) return '<div class="ai-block">'+escH(it)+'</div>';
+      return '<div class="row">'+escH(it)+'</div>';
+    }).join('');
+    sections+='<section><h2>'+m.label+' <span class="desc">'+m.desc+'</span></h2>'+
+      '<div class="count">'+items.length+' записей</div>'+rows+'</section>';
+  });
+
+  if(!sections) sections='<section><p style="color:#703040">Нет данных для отчёта. Запустите расследование.</p></section>';
+
+  var html='<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">'+
+    '<title>Ravens Report — '+target+'</title>'+
+    '<style>*{box-sizing:border-box;margin:0;padding:0}'+
+    'body{background:#060001;color:#e0b8bd;font-family:"Courier New",monospace;padding:2rem}'+
+    'body::before{content:"";position:fixed;inset:0;pointer-events:none;'+
+      'background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(204,34,51,.012) 2px,rgba(204,34,51,.012) 4px)}'+
+    '.header{border:1px solid #3d0c10;border-radius:8px;padding:1.5rem 2rem;margin-bottom:2rem;'+
+      'background:rgba(19,2,5,.9)}'+
+    '.header h1{font-size:1.6rem;font-weight:900;color:#ff2244;letter-spacing:.2em;'+
+      'text-shadow:0 0 20px rgba(255,34,68,.4)}'+
+    '.header h1 svg{vertical-align:middle;margin-right:.5rem}'+
+    '.header .meta{display:flex;gap:2rem;margin-top:.8rem;flex-wrap:wrap}'+
+    '.header .meta .field{font-size:.75rem}'+
+    '.header .meta .field .k{color:#6b3038;text-transform:uppercase;letter-spacing:.1em;font-size:.62rem}'+
+    '.header .meta .field .v{color:#ff4466;font-weight:700;font-size:.9rem}'+
+    'section{background:rgba(12,1,3,.9);border:1px solid #280608;border-radius:7px;'+
+      'padding:1.2rem 1.5rem;margin-bottom:1.2rem}'+
+    'section h2{font-size:.85rem;font-weight:900;color:#cc2233;letter-spacing:.15em;'+
+      'text-transform:uppercase;margin-bottom:.3rem;padding-bottom:.5rem;border-bottom:1px solid #280608}'+
+    '.desc{font-size:.65rem;color:#6b3038;font-weight:400;letter-spacing:.05em;margin-left:.5rem}'+
+    '.count{font-size:.62rem;color:#6b3038;margin-bottom:.7rem}'+
+    '.row{background:#130205;border:1px solid #280608;border-radius:4px;'+
+      'padding:.3rem .6rem;font-size:.72rem;color:#e0b8bd;margin-bottom:.18rem;word-break:break-all}'+
+    '.ai-block{background:#0c0103;border:1px solid #3d0c10;border-radius:6px;'+
+      'padding:.8rem 1rem;font-size:.78rem;color:#ddc0c5;line-height:1.9;white-space:pre-wrap}'+
+    '.footer{text-align:center;color:#3d0c10;font-size:.65rem;margin-top:2rem;letter-spacing:.1em}'+
+    '</style></head><body>'+
+    '<div class="header">'+
+      '<h1>'+
+        '<svg width="24" height="20" viewBox="0 0 28 22" fill="#ff2244">'+
+          '<path d="M3 18 Q5 7 13 9 Q19 3 24 7 Q18 6 16 11 Q22 9 20 17 Q13 11 11 15 Q13 20 8 21 Q4 22 3 18Z"/>'+
+          '<circle cx="22" cy="7" r="1.8"/>'+
+        '</svg>'+
+        'RAVENS NEXUS — OSINT REPORT'+
+      '</h1>'+
+      '<div class="meta">'+
+        '<div class="field"><div class="k">Цель</div><div class="v">'+escH(target)+'</div></div>'+
+        '<div class="field"><div class="k">Найдено</div><div class="v">'+found+' записей</div></div>'+
+        '<div class="field"><div class="k">Время</div><div class="v">'+elapsed+'</div></div>'+
+        '<div class="field"><div class="k">Уровень угрозы</div><div class="v">'+escH(score)+'</div></div>'+
+        '<div class="field"><div class="k">Дата</div><div class="v">'+new Date().toLocaleString('ru-RU')+'</div></div>'+
+      '</div>'+
+    '</div>'+
+    sections+
+    '<div class="footer">RAVENS // NVIDIA NIM NEXUS // POWERED BY NEMOTRON-ULTRA-550B // ONLY PUBLIC DATA</div>'+
+    '</body></html>';
+
+  var win=window.open('','_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
+function clearResults(){
+  document.getElementById('res-content').innerHTML=
+    '<div style="color:var(--textd);font-size:.7rem;padding:.3rem">Данные появятся после расследования...</div>';
+  allResults={}; modResults={};
+  NODES.forEach(function(n){modResults[n.id]=[];});
+}
+
+function clearAll(){
+  foundCount=0; doneCount=0; doneModIds={}; allResults={}; modResults={};
+  NODES.forEach(function(n){NS[n.id]={state:'idle',items:[]};modResults[n.id]=[];});
+  document.getElementById('log-out').innerHTML=
+    '<div class="ll info"><span class="lts">[RST]</span>Сброс выполнен.</div>';
+  document.getElementById('res-content').innerHTML=
+    '<div style="color:var(--textd);font-size:.7rem;padding:.3rem">Данные появятся после расследования...</div>';
+  document.getElementById('target-display').textContent='RAVENS NEXUS';
+  document.getElementById('target-sub').textContent='введите данные цели и запустите расследование';
+  document.getElementById('prog-fill').style.width='0';
+  document.getElementById('s-found').textContent='0';
+  document.getElementById('s-mods').textContent='0/7';
+  document.getElementById('s-time').textContent='0s';
+  document.getElementById('s-score').textContent='--';
+  document.getElementById('s-score').style.color='var(--textd)';
+  clearInterval(timerInt);
+  closeNodePanel();
+  document.getElementById('runBtn').disabled=false;
+  document.getElementById('runBtn').classList.remove('scanning');
+  document.getElementById('runBtn').textContent='> НАЧАТЬ РАССЛЕДОВАНИЕ';
+  document.querySelectorAll('.mod').forEach(function(m){
+    m.className='mod active';
+    m.querySelector('.ms').style.background='';
+  });
 }
 
 // =====================================================
@@ -591,9 +1029,14 @@ async function sendChat(){
   msgs.appendChild(ud); chatHist.push({role:'user',content:text}); msgs.scrollTop=msgs.scrollHeight;
   var ad=document.createElement('div'); ad.className='cm assistant'; ad.textContent='...';
   msgs.appendChild(ad); msgs.scrollTop=msgs.scrollHeight;
-  var resp=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHist})});
-  var reader=resp.body.getReader(), dec=new TextDecoder();
-  var buf='', ans=''; ad.textContent='';
+
+  var resp=await fetch('/chat',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({messages:chatHist})
+  });
+  var reader=resp.body.getReader(), dec=new TextDecoder(), buf='', ans='';
+  ad.textContent='';
   while(true){
     var rd=await reader.read(); if(rd.done) break;
     buf+=dec.decode(rd.value,{stream:true});
@@ -601,7 +1044,10 @@ async function sendChat(){
     for(var i=0;i<lines.length;i++){
       if(!lines[i].startsWith('data: ')) continue;
       var raw=lines[i].slice(6); if(raw==='[DONE]') break;
-      try{var o=JSON.parse(raw);if(o.type==='content'){ans+=o.content;ad.textContent=ans;msgs.scrollTop=msgs.scrollHeight;}}catch(e){}
+      try{
+        var o=JSON.parse(raw);
+        if(o.type==='content'){ans+=o.content;ad.textContent=ans;msgs.scrollTop=msgs.scrollHeight;}
+      }catch(e){}
     }
   }
   chatHist.push({role:'assistant',content:ans});

@@ -1,9 +1,11 @@
 https://airbit.com/mahito
 https://aniworld.to/user/profil/mahito
 https://anilist.co/user/mahito/
+https://archiveofourown.org/users/mahito
 https://atcoder.jp/users/mahito
 https://audiojungle.net/user/mahito
 https://www.behance.net/mahito
+https://mahito.blogspot.com
 https://bsky.app/profile/mahito.bsky.social
 https://www.cgtrader.com/mahito
 https://mahito.carrd.co/
@@ -17,7 +19,6 @@ https://crowdin.com/profile/mahito
 https://dev.to/mahito
 https://www.dailymotion.com/mahito
 https://www.dealabs.com/profile/mahito
-https://www.deviantart.com/mahito
 https://discord.com
 https://disqus.com/mahito
 https://hub.docker.com/u/mahito/
@@ -35,6 +36,7 @@ https://gitlab.com/mahito
 https://www.grailed.com/mahito
 http://en.gravatar.com/mahito
 https://www.gumroad.com/mahito
+https://news.ycombinator.com/user?id=mahito
 https://hackerone.com/mahito
 https://hackerrank.com/mahito
 https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-username?username=mahito
@@ -52,6 +54,7 @@ https://linktr.ee/mahito
 https://mahito.livejournal.com
 https://medium.com/@mahito
 https://www.memrise.com/user/mahito/
+https://api.mojang.com/users/profiles/minecraft/mahito
 https://www.mixcloud.com/mahito/
 https://monkeytype.com/profile/mahito
 https://myanimelist.net/profile/mahito
@@ -67,7 +70,9 @@ https://pokemonshowdown.com/users/mahito
 https://www.producthunt.com/@mahito
 http://promodj.com/mahito
 https://pronouns.page/@mahito
+https://rumble.com/user/mahito
 https://apps.runescape.com/runemetrics/app/overview/player/mahito
+https://scratch.mit.edu/users/mahito
 https://sketchfab.com/mahito
 https://mahito.slack.com
 https://www.snapchat.com/add/mahito
@@ -89,7 +94,6 @@ https://mahito.tistory.com/
 https://www.tradingview.com/u/mahito/
 https://www.trakt.tv/users/mahito
 https://trello.com/mahito
-https://trovo.live/s/mahito/
 https://untappd.com/user/mahito
 https://vk.com/mahito
 https://account.venmo.com/u/mahito
@@ -104,6 +108,8 @@ https://www.youtube.com/@mahito
 https://akniga.org/profile/mahito
 http://dating.ru/mahito
 https://www.drive2.ru/users/mahito
+https://www.fl.ru/users/mahito
+https://www.furaffinity.net/user/mahito
 https://www.geocaching.com/p/default.aspx?u=mahito
 https://habr.com/ru/users/mahito
 https://www.jeuxvideo.com/profil/mahito
@@ -118,4 +124,4 @@ https://pikabu.ru/@mahito
 https://www.pinterest.com/mahito/
 https://mahito.tumblr.com/
 https://www.baby.ru/u/mahito
-Total Websites Username Detected On : 120
+Total Websites Username Detected On : 126

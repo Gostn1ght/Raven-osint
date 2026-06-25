@@ -1,22 +1,37 @@
-import os, json, subprocess, threading, queue, time, socket, re, secrets, hashlib
+import os, json, subprocess, threading, queue, time, socket, re, secrets, hashlib, hmac
 import urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta
 from flask import (Flask, request, Response, stream_with_context,
-                   render_template, session, redirect, url_for, jsonify)
+                   render_template, session, redirect, url_for, jsonify, g)
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 
+try:
+    import jwt as pyjwt
+except ImportError:
+    pyjwt = None
+
+try:
+    from authlib.integrations.flask_client import OAuth
+except ImportError:
+    OAuth = None
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ravens.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///ravens.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 PORT, HOST = 5000, "0.0.0.0"
+FORUM_SSO_SECRET = os.environ.get('FORUM_SSO_SECRET', app.secret_key)
+FORUM_URL = os.environ.get('FORUM_URL', '')
+OAUTH_BASE = os.environ.get('OAUTH_REDIRECT_BASE', 'http://localhost:5000').rstrip('/')
 
 db = SQLAlchemy(app)
+oauth = OAuth(app) if OAuth else None
 
 # ══════════════════════════════════════════
 # MODELS
@@ -25,26 +40,63 @@ class User(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     username   = db.Column(db.String(40), unique=True, nullable=False)
     email      = db.Column(db.String(120), unique=True, nullable=False)
-    pw_hash    = db.Column(db.String(256), nullable=False)
+    pw_hash    = db.Column(db.String(256), default='')
     avatar_url = db.Column(db.String(500), default='')
     banner_url = db.Column(db.String(500), default='')
     bio        = db.Column(db.String(300), default='')
+    nickname   = db.Column(db.String(60), default='')
     rank       = db.Column(db.String(40), default='ANALYST')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
     api_key    = db.Column(db.String(64), unique=True)
     login_attempts = db.Column(db.Integer, default=0)
     locked_until   = db.Column(db.DateTime)
+    oauth_provider = db.Column(db.String(20), default='')
+    oauth_id       = db.Column(db.String(120), default='')
+    email_verified = db.Column(db.Boolean, default=False)
     databases  = db.relationship('RavenDB', backref='owner', lazy=True)
+    oauth_accounts = db.relationship('OAuthAccount', backref='user', lazy=True, cascade='all,delete-orphan')
 
     def set_password(self, pw):
         self.pw_hash = generate_password_hash(pw, method='pbkdf2:sha256', salt_length=16)
 
     def check_password(self, pw):
+        if not self.pw_hash:
+            return False
         return check_password_hash(self.pw_hash, pw)
 
     def gen_api_key(self):
         self.api_key = 'rvn_' + secrets.token_urlsafe(40)
+
+    def display_name(self):
+        return self.nickname or self.username
+
+    def public_dict(self, include_api=False):
+        d = {
+            'username': self.username,
+            'nickname': self.nickname or self.username,
+            'email': self.email,
+            'rank': self.rank,
+            'avatar': self.avatar_url,
+            'banner': self.banner_url,
+            'bio': self.bio,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'oauth_provider': self.oauth_provider or None,
+            'forum_url': FORUM_URL or None,
+        }
+        if include_api and self.api_key:
+            d['api_key'] = self.api_key
+            d['api_key_masked'] = self.api_key[:8] + '…' + self.api_key[-4:]
+        return d
+
+class OAuthAccount(db.Model):
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    provider   = db.Column(db.String(20), nullable=False)
+    provider_id = db.Column(db.String(120), nullable=False)
+    email      = db.Column(db.String(120), default='')
+    linked_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('provider', 'provider_id', name='uq_oauth_provider'),)
 
 class RavenDB(db.Model):
     id          = db.Column(db.Integer, primary_key=True)
@@ -60,6 +112,68 @@ class RavenDB(db.Model):
 
 with app.app_context():
     db.create_all()
+    # lightweight migrations for sqlite
+    from sqlalchemy import inspect, text
+    insp = inspect(db.engine)
+    if 'user' in insp.get_table_names():
+        cols = {c['name'] for c in insp.get_columns('user')}
+        for col, ddl in [
+            ('nickname', "ALTER TABLE user ADD COLUMN nickname VARCHAR(60) DEFAULT ''"),
+            ('oauth_provider', "ALTER TABLE user ADD COLUMN oauth_provider VARCHAR(20) DEFAULT ''"),
+            ('oauth_id', "ALTER TABLE user ADD COLUMN oauth_id VARCHAR(120) DEFAULT ''"),
+            ('email_verified', "ALTER TABLE user ADD COLUMN email_verified BOOLEAN DEFAULT 0"),
+        ]:
+            if col not in cols:
+                try:
+                    db.session.execute(text(ddl))
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
+def _register_oauth():
+    if not oauth:
+        return
+    gid, gsec = os.environ.get('GOOGLE_CLIENT_ID'), os.environ.get('GOOGLE_CLIENT_SECRET')
+    if gid and gsec:
+        oauth.register(
+            name='google',
+            client_id=gid, client_secret=gsec,
+            server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+            client_kwargs={'scope': 'openid email profile'},
+        )
+    ghid, ghsec = os.environ.get('GITHUB_CLIENT_ID'), os.environ.get('GITHUB_CLIENT_SECRET')
+    if ghid and ghsec:
+        oauth.register(
+            name='github',
+            client_id=ghid, client_secret=ghsec,
+            access_token_url='https://github.com/login/oauth/access_token',
+            authorize_url='https://github.com/login/oauth/authorize',
+            api_base_url='https://api.github.com/',
+            client_kwargs={'scope': 'user:email'},
+        )
+    did, dsec = os.environ.get('DISCORD_CLIENT_ID'), os.environ.get('DISCORD_CLIENT_SECRET')
+    if did and dsec:
+        oauth.register(
+            name='discord',
+            client_id=did, client_secret=dsec,
+            access_token_url='https://discord.com/api/oauth2/token',
+            authorize_url='https://discord.com/api/oauth2/authorize',
+            api_base_url='https://discord.com/api/',
+            client_kwargs={'scope': 'identify email'},
+        )
+
+_register_oauth()
+
+@app.after_request
+def security_headers(resp):
+    resp.headers['X-Frame-Options'] = 'DENY'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    resp.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    resp.headers['X-XSS-Protection'] = '0'
+    if request.is_secure or os.environ.get('SESSION_COOKIE_SECURE', '').lower() == 'true':
+        resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return resp
 
 # ══════════════════════════════════════════
 # AUTH HELPERS
@@ -109,6 +223,98 @@ def csrf_token():
 def check_csrf():
     t = request.headers.get('X-CSRF-Token') or request.form.get('_csrf')
     return t and t == session.get('_csrf')
+
+def _unique_username(base):
+    base = re.sub(r'[^a-zA-Z0-9_]', '_', base)[:30] or 'user'
+    if not User.query.filter_by(username=base).first():
+        return base
+    for i in range(2, 9999):
+        cand = f'{base}_{i}'[:40]
+        if not User.query.filter_by(username=cand).first():
+            return cand
+    return f'user_{secrets.token_hex(4)}'
+
+def _login_user(u):
+    session.clear()
+    session.permanent = True
+    session['user_id'] = u.id
+    session['_csrf'] = secrets.token_hex(24)
+    u.last_login = datetime.utcnow()
+    db.session.commit()
+
+def _oauth_userinfo(provider, token):
+    if not oauth:
+        return None
+    client = oauth.create_client(provider)
+    if provider == 'google':
+        return client.get('userinfo', token=token).json()
+    if provider == 'github':
+        resp = client.get('user', token=token)
+        info = resp.json()
+        emails = client.get('user/emails', token=token).json()
+        primary = next((e['email'] for e in emails if e.get('primary')), emails[0]['email'] if emails else '')
+        info['email'] = info.get('email') or primary
+        info['sub'] = str(info.get('id'))
+        info['picture'] = info.get('avatar_url')
+        return info
+    if provider == 'discord':
+        resp = client.get('users/@me', token=token)
+        info = resp.json()
+        return {
+            'sub': info.get('id'),
+            'email': info.get('email'),
+            'name': info.get('global_name') or info.get('username'),
+            'picture': f"https://cdn.discordapp.com/avatars/{info['id']}/{info.get('avatar')}.png" if info.get('avatar') else '',
+            'username': info.get('username'),
+        }
+    return None
+
+def _find_or_create_oauth_user(provider, info):
+    pid = str(info.get('sub') or info.get('id') or '')
+    email = (info.get('email') or '').strip().lower()
+    name = info.get('name') or info.get('login') or info.get('username') or 'user'
+    avatar = info.get('picture') or info.get('avatar_url') or ''
+    if not pid:
+        return None
+    acct = OAuthAccount.query.filter_by(provider=provider, provider_id=pid).first()
+    if acct:
+        u = acct.user
+    elif email:
+        u = User.query.filter_by(email=email).first()
+    else:
+        u = None
+    if not u:
+        u = User(username=_unique_username(name), email=email or f'{provider}_{pid}@oauth.local',
+                 nickname=name[:60], avatar_url=avatar[:500], oauth_provider=provider,
+                 oauth_id=pid, email_verified=bool(email), pw_hash='')
+        u.gen_api_key()
+        db.session.add(u)
+        db.session.flush()
+    if not OAuthAccount.query.filter_by(provider=provider, provider_id=pid).first():
+        db.session.add(OAuthAccount(user_id=u.id, provider=provider, provider_id=pid, email=email))
+    if avatar and not u.avatar_url:
+        u.avatar_url = avatar[:500]
+    if not u.oauth_provider:
+        u.oauth_provider = provider
+        u.oauth_id = pid
+    db.session.commit()
+    return u
+
+def _forum_jwt(u):
+    if not pyjwt:
+        return None
+    payload = {
+        'sub': str(u.id),
+        'username': u.username,
+        'nickname': u.display_name(),
+        'email': u.email,
+        'avatar': u.avatar_url,
+        'rank': u.rank,
+        'iat': int(time.time()),
+        'exp': int(time.time()) + 3600,
+        'iss': 'raven-platform',
+    }
+    return pyjwt.encode(payload, FORUM_SSO_SECRET, algorithm='HS256')
 
 # ══════════════════════════════════════════
 # AI SYSTEM PROMPT
@@ -566,10 +772,86 @@ def auth_logout():
 @app.route('/auth/me')
 def auth_me():
     u = current_user()
-    if not u: return jsonify({'logged_in':False})
-    return jsonify({'logged_in':True,'username':u.username,'email':u.email,
-                    'rank':u.rank,'avatar':u.avatar_url,'banner':u.banner_url,
-                    'bio':u.bio,'api_key':u.api_key,'created_at':u.created_at.isoformat()})
+    if not u:
+        providers = []
+        if oauth:
+            for p in ('google', 'github', 'discord'):
+                try:
+                    if oauth.create_client(p):
+                        providers.append(p)
+                except Exception:
+                    pass
+        return jsonify({'logged_in': False, 'oauth_providers': providers, 'forum_url': FORUM_URL or None})
+    linked = [{'provider': a.provider, 'email': a.email} for a in u.oauth_accounts]
+    data = {'logged_in': True, **u.public_dict(include_api=True), 'linked_oauth': linked}
+    return jsonify(data)
+
+@app.route('/auth/oauth/<provider>')
+def oauth_begin(provider):
+    if provider not in ('google', 'github', 'discord') or not oauth:
+        return jsonify({'error': 'OAuth недоступен'}), 400
+    try:
+        client = oauth.create_client(provider)
+        redirect_uri = f'{OAUTH_BASE}/auth/oauth/{provider}/callback'
+        return client.authorize_redirect(redirect_uri)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/auth/oauth/<provider>/callback')
+def oauth_callback(provider):
+    if not oauth:
+        return redirect('/?auth=error')
+    try:
+        client = oauth.create_client(provider)
+        token = client.authorize_access_token()
+        info = _oauth_userinfo(provider, token)
+        if provider == 'google' and info:
+            info['sub'] = info.get('sub') or info.get('id')
+        u = _find_or_create_oauth_user(provider, info or {})
+        if not u:
+            return redirect('/?auth=error')
+        _login_user(u)
+        return redirect('/?auth=ok')
+    except Exception:
+        return redirect('/?auth=error')
+
+@app.route('/auth/regenerate-key', methods=['POST'])
+@login_required
+def regenerate_api_key():
+    if not check_csrf():
+        return jsonify({'error': 'CSRF failed'}), 403
+    u = current_user()
+    u.gen_api_key()
+    db.session.commit()
+    return jsonify({'ok': True, 'api_key': u.api_key})
+
+@app.route('/api/forum/token')
+@login_required
+def forum_token():
+    u = current_user()
+    tok = _forum_jwt(u)
+    if not tok:
+        return jsonify({'error': 'PyJWT не установлен'}), 500
+    return jsonify({'token': tok, 'forum_url': FORUM_URL, 'expires_in': 3600})
+
+@app.route('/api/forum/verify', methods=['POST'])
+def forum_verify():
+    """Endpoint для внешнего форума — проверка SSO токена."""
+    ip = request.remote_addr
+    if not rate_limit(ip, window=60, max_req=30):
+        return jsonify({'error': 'rate limit'}), 429
+    data = request.get_json(force=True, silent=True) or {}
+    token = data.get('token', '')
+    if not token or not pyjwt:
+        return jsonify({'valid': False}), 400
+    try:
+        payload = pyjwt.decode(token, FORUM_SSO_SECRET, algorithms=['HS256'], issuer='raven-platform')
+        u = User.query.get(int(payload['sub']))
+        if not u:
+            return jsonify({'valid': False}), 404
+        return jsonify({'valid': True, 'user': u.public_dict()})
+    except Exception:
+        return jsonify({'valid': False}), 401
 
 @app.route('/auth/update', methods=['POST'])
 @login_required
@@ -579,6 +861,20 @@ def auth_update():
     u = current_user()
     data = request.get_json(force=True, silent=True) or {}
     if 'bio' in data: u.bio = data['bio'][:300]
+    if 'nickname' in data:
+        nick = data['nickname'].strip()[:60]
+        if nick and not re.match(r'^[a-zA-Z0-9_\-\.а-яА-ЯёЁ ]{2,60}$', nick):
+            return jsonify({'error': 'Некорректный никнейм'}), 400
+        u.nickname = nick
+    if 'email' in data:
+        em = data['email'].strip().lower()
+        if em and not re.match(r'^[^@]+@[^@]+\.[^@]+$', em):
+            return jsonify({'error': 'Неверный email'}), 400
+        if em and User.query.filter(User.email == em, User.id != u.id).first():
+            return jsonify({'error': 'Email занят'}), 409
+        if em:
+            u.email = em
+            u.email_verified = False
     if 'avatar_url' in data:
         av = data['avatar_url'][:500]
         if av and not re.match(r'^https?://', av):
@@ -643,14 +939,137 @@ def del_ravendb(db_id):
     db.session.delete(d); db.session.commit()
     return jsonify({'ok':True})
 
+@app.route('/api/ravendb/search', methods=['POST'])
+@login_required
+def ravendb_search():
+    if not check_csrf():
+        return jsonify({'error': 'CSRF failed'}), 403
+    u = current_user()
+    data = request.get_json(force=True, silent=True) or {}
+    target = data.get('query', '').strip()
+    if not target:
+        return jsonify({'error': 'query обязателен'}), 400
+    dbs = RavenDB.query.filter_by(user_id=u.id, enabled=True).all()
+    results = []
+    for d in dbs:
+        hit = {'db_id': d.id, 'name': d.name, 'url': d.url, 'db_type': d.db_type, 'found': False, 'snippet': ''}
+        try:
+            search_url = d.url + ('&' if '?' in d.url else '?') + 'q=' + urllib.parse.quote(target)
+            req = urllib.request.Request(search_url, headers={"User-Agent": "Raven-OSINT/4.0"})
+            with urllib.request.urlopen(req, timeout=12) as r:
+                content = r.read().decode('utf-8', 'ignore')
+            if target.lower() in content.lower():
+                hit['found'] = True
+                idx = content.lower().find(target.lower())
+                hit['snippet'] = content[max(0, idx - 40):idx + len(target) + 80].replace('\n', ' ')[:200]
+                d.hits = (d.hits or 0) + 1
+        except Exception as e:
+            hit['error'] = type(e).__name__
+        results.append(hit)
+    db.session.commit()
+    return jsonify({'query': target, 'results': results, 'total_hits': sum(1 for r in results if r.get('found'))})
+
+@app.route('/api/ravendb/ahmia')
+def ravendb_ahmia():
+    ip = request.remote_addr
+    if not rate_limit(ip, window=60, max_req=15):
+        return jsonify({'error': 'rate limit'}), 429
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'results': []})
+    results = []
+    try:
+        url = f'https://ahmia.fi/search/?q={urllib.parse.quote(q)}'
+        req = urllib.request.Request(url, headers={'User-Agent': 'Raven-OSINT/4.0'})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            html = r.read().decode('utf-8', 'ignore')
+        titles = re.findall(r'<h4[^>]*>\s*<a href="([^"]+)"[^>]*>([^<]+)</a>', html)
+        for href, title in titles[:12]:
+            results.append({'title': title.strip()[:120], 'url': href})
+    except Exception as e:
+        return jsonify({'results': [], 'error': type(e).__name__})
+    return jsonify({'results': results, 'query': q})
+
+@app.route('/api/intel/aircraft')
+def intel_aircraft():
+    ip = request.remote_addr
+    if not rate_limit(ip, window=60, max_req=20):
+        return jsonify({'error': 'rate limit'}), 429
+    kind = request.args.get('kind', 'commercial')
+    lamin = request.args.get('lamin', '-90')
+    lomin = request.args.get('lomin', '-180')
+    lamax = request.args.get('lamax', '90')
+    lomax = request.args.get('lomax', '180')
+    try:
+        url = f'https://opensky-network.org/api/states/all?lamin={lamin}&lomin={lomin}&lamax={lamax}&lomax={lomax}'
+        req = urllib.request.Request(url, headers={'User-Agent': 'Raven-Intel/4.0'})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+        states = data.get('states') or []
+        out = []
+        mil_prefix = ('RCH', 'REACH', 'NAVY', 'ARMY', 'USAF', 'RAF', 'RFF', 'CNV')
+        for s in states[:500]:
+            if not s or len(s) < 8:
+                continue
+            callsign = (s[1] or '').strip()
+            lat, lon = s[6], s[5]
+            if lat is None or lon is None:
+                continue
+            is_mil = callsign.upper().startswith(mil_prefix) or (s[0] or '').startswith('ae')
+            is_private = bool(s[0]) and not callsign
+            cat = 'military' if is_mil else 'private' if is_private else 'commercial'
+            if kind != 'all' and cat != kind:
+                continue
+            out.append({
+                'icao': s[0], 'callsign': callsign or '???', 'country': s[2],
+                'lat': lat, 'lon': lon, 'alt': s[7], 'speed': s[9],
+                'category': cat,
+            })
+        return jsonify({'count': len(out), 'aircraft': out[:200]})
+    except Exception as e:
+        return jsonify({'error': str(e), 'aircraft': []}), 502
+
+@app.route('/api/intel/earthquakes')
+def intel_earthquakes():
+    try:
+        url = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson'
+        req = urllib.request.Request(url, headers={'User-Agent': 'Raven-Intel/4.0'})
+        with urllib.request.urlopen(req, timeout=12) as r:
+            return jsonify(json.loads(r.read()))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+@app.route('/api/intel/iss')
+def intel_iss():
+    try:
+        url = 'https://api.wheretheiss.at/v1/satellites/25544'
+        req = urllib.request.Request(url, headers={'User-Agent': 'Raven-Intel/4.0'})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return jsonify(json.loads(r.read()))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+@app.route('/api/intel/threats')
+def intel_threats():
+    """Публичные OSINT-алерты для карты (демо-ленты + RSS при наличии)."""
+    threats = [
+        {'lat': 48.4, 'lon': 31.2, 'lvl': 7, 'title': 'Региональный мониторинг', 'text': 'Повышенная сетевая активность', 'src': 'SigInt'},
+        {'lat': 35.6, 'lon': 51.4, 'lvl': 5, 'title': 'Ближний Восток', 'text': 'Мониторинг инфраструктуры', 'src': 'OSINT'},
+        {'lat': 39.9, 'lon': 116.4, 'lvl': 4, 'title': 'Азиатский регион', 'text': 'Трафик дата-центров', 'src': 'NetInt'},
+        {'lat': 55.7, 'lon': 37.6, 'lvl': 3, 'title': 'Европа/СНГ', 'text': 'Публичные источники', 'src': 'OSINT'},
+    ]
+    return jsonify({'threats': threats, 'status': 'MONITORING'})
+
 @app.route('/api/ravendb/<int:db_id>/toggle', methods=['POST'])
 @login_required
 def toggle_ravendb(db_id):
     u = current_user()
     d = RavenDB.query.filter_by(id=db_id, user_id=u.id).first()
-    if not d: return jsonify({'error':'Не найдено'}), 404
-    d.enabled = not d.enabled; db.session.commit()
-    return jsonify({'ok':True,'enabled':d.enabled})
+    if not d:
+        return jsonify({'error': 'Не найдено'}), 404
+    d.enabled = not d.enabled
+    db.session.commit()
+    return jsonify({'ok': True, 'enabled': d.enabled})
 
 # ══════════════════════════════════════════
 # ROUTES — MAIN
@@ -658,11 +1077,15 @@ def toggle_ravendb(db_id):
 @app.route('/')
 def index():
     from flask import make_response
-    resp = make_response(render_template('index.html', csrf=csrf_token()))
+    resp = make_response(render_template('index.html', csrf=csrf_token(), forum_url=FORUM_URL))
     resp.headers['Cache-Control'] = 'no-store'
-    resp.headers['X-Frame-Options'] = 'DENY'
-    resp.headers['X-Content-Type-Options'] = 'nosniff'
-    resp.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src * data:; connect-src *; frame-src 'none'"
+    resp.headers['Content-Security-Policy'] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; "
+        "style-src 'self' 'unsafe-inline' https://unpkg.com; img-src * data: blob:; "
+        "connect-src 'self' https://*.basemaps.cartocdn.com https://opensky-network.org "
+        "https://earthquake.usgs.gov https://api.wheretheiss.at https://ahmia.fi; frame-src 'none'; "
+        "object-src 'none'; base-uri 'self'"
+    )
     return resp
 
 @app.route('/static/<path:filename>')
@@ -809,5 +1232,5 @@ def chat():
 def favicon(): return Response(status=204)
 
 if __name__ == '__main__':
-    print(f"RAVENS NEXUS v4: http://{HOST}:{PORT}")
+    print(f"RAVEN v4 — Global Threat Intercept: http://{HOST}:{PORT}")
     app.run(host=HOST, port=PORT, debug=False, threaded=True)

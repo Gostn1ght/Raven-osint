@@ -1190,6 +1190,11 @@ def investigate():
     email  = data.get('email','').strip()
     phone  = data.get('phone','').strip()
     domain = data.get('domain','').strip()
+    effective_user = user
+    if not effective_user and name:
+        effective_user = re.sub(r'[^\w]', '_', name, flags=re.UNICODE).strip('_').lower()[:40]
+    if not effective_user and email and '@' in email:
+        effective_user = email.split('@')[0].lower()
     uid    = session.get('user_id')
     user_dbs = []
     if uid:
@@ -1214,9 +1219,9 @@ def investigate():
         t = threading.Thread(target=fn, args=args+(q,), daemon=True)
         threads.append(t); t.start()
 
-    if user: run_t(run_sherlock,(user,),"sherlock")
+    if effective_user: run_t(run_sherlock,(effective_user,),"sherlock")
     else: skip("sherlock","username не указан")
-    if user or name: run_t(run_maigret,((user or name).replace(' ','_').lower(),),"maigret")
+    if effective_user or name: run_t(run_maigret,((effective_user or name).replace(' ','_').lower(),),"maigret")
     else: skip("maigret","нет цели")
     if email: run_t(run_holehe,(email,),"holehe")
     else: skip("holehe","email не указан")
@@ -1224,11 +1229,11 @@ def investigate():
     else: skip("phone","телефон не указан")
     if email: run_t(run_hibp,(email,),"hibp")
     else: skip("hibp","email не указан")
-    if user: run_t(run_social_check,(user,),"social")
+    if effective_user: run_t(run_social_check,(effective_user,),"social")
     else: skip("social","username не указан")
-    if user: run_t(run_github,(user,),"github")
+    if effective_user: run_t(run_github,(effective_user,),"github")
     else: skip("github","username не указан")
-    if user: run_t(run_telegram_check,(user,),"telegram")
+    if effective_user: run_t(run_telegram_check,(effective_user,),"telegram")
     else: skip("telegram","username не указан")
     target_d = domain or (email.split('@')[1] if '@' in email else '')
     if target_d: run_t(run_whois_dns,(target_d,),"whois")

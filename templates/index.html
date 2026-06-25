@@ -3,631 +3,820 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RAVENS NEXUS v3 — OSINT</title>
+<title>RAVENS NEXUS — FSB OSINT</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 :root{
-  --bg:#050002;--s1:#0b0104;--s2:#120206;
-  --b1:#260607;--b2:#3d0d10;
-  --red:#cc2233;--red2:#ff2244;--red3:#ff5566;
-  --rose:#dd4466;--mag:#cc3388;--amb:#cc8822;
-  --pur:#7733cc;--blu:#3377cc;--ora:#cc5533;
-  --brn:#886633;--dkr:#661133;--jad:#44bb77;
-  --text:#ddb8bc;--textd:#6a3038;--textm:#a08088;
-  --warn:#ff8833;--info:#bb6677;
+  --bg:#060810;--s1:#080c14;--s2:#0c1118;--b1:#1a2235;--b2:#263045;
+  --cyan:#00f5ff;--cyan2:#00c8d4;--cyan3:#004d54;
+  --mag:#ff00cc;--mag2:#cc0099;
+  --grn:#00ff88;--grn2:#00cc66;
+  --ora:#ff8800;--red:#ff2244;--red2:#cc1133;
+  --yel:#ffee00;
+  --text:#c8e0f0;--textd:#3a5070;--textm:#7a9ab0;
+  --panel:#080d14cc;
+  --grid-cyan:rgba(0,245,255,.07);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;overflow:hidden;font-family:'Courier New',monospace;background:var(--bg);color:var(--text)}
+html,body{height:100%;overflow:hidden;
+  font-family:'Courier New',monospace;background:var(--bg);color:var(--text)}
 
-/* Scanlines */
-body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9000;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(180,30,50,.012) 2px,rgba(180,30,50,.012) 4px)}
+/* scanlines */
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9000;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,
+  rgba(0,245,255,.018) 3px,rgba(0,245,255,.018) 4px)}
 
-/* ── FEATHERS ─────────────────────────────────── */
+/* grid bg */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;
+  background-image:linear-gradient(var(--grid-cyan) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid-cyan) 1px,transparent 1px);
+  background-size:40px 40px;animation:gridScroll 40s linear infinite}
+@keyframes gridScroll{0%{background-position:0 0}100%{background-position:0 40px}}
+
+/* feathers */
 #feather-layer{position:fixed;inset:0;pointer-events:none;z-index:8900;overflow:hidden}
 .feather{position:absolute;top:-50px;border-radius:50% 50% 45% 45%;
-  background:linear-gradient(180deg,transparent,rgba(60,5,12,.7) 45%,rgba(20,0,5,.4));
-  animation:fall linear infinite;transform-origin:center top}
-@keyframes fall{
-  0%{opacity:0;transform:translateY(0) rotate(var(--fr)) scaleX(1)}
-  8%{opacity:var(--fo)}
-  50%{transform:translateY(50vh) rotate(calc(var(--fr) + 18deg)) scaleX(-1)}
-  92%{opacity:calc(var(--fo) * 0.5)}
-  100%{opacity:0;transform:translateY(105vh) rotate(calc(var(--fr) + 38deg)) scaleX(1)}
-}
+  background:linear-gradient(180deg,transparent,rgba(0,245,255,.12) 45%,rgba(0,100,140,.06));
+  animation:fall linear infinite}
+@keyframes fall{0%{opacity:0;transform:translateY(0) rotate(var(--fr)) scaleX(1)}
+  8%{opacity:var(--fo)}50%{transform:translateY(50vh) rotate(calc(var(--fr)+18deg)) scaleX(-1)}
+  92%{opacity:calc(var(--fo)*.4)}100%{opacity:0;transform:translateY(105vh) rotate(calc(var(--fr)+38deg)) scaleX(1)}}
 
-/* ── TOPBAR ────────────────────────────────────── */
-#topbar{position:fixed;top:0;left:0;right:0;height:50px;z-index:200;
-  background:rgba(5,0,2,.98);border-bottom:1px solid var(--b2);
-  display:flex;align-items:center;padding:0 1rem;gap:.75rem;backdrop-filter:blur(12px)}
-#raven-cv{display:block;flex-shrink:0}
-.logo-name{font-size:1.05rem;font-weight:900;letter-spacing:.22em;color:var(--red2);
-  text-shadow:0 0 18px rgba(255,34,68,.45)}
-.logo-sub{font-size:.58rem;color:var(--textd);letter-spacing:.18em;margin-left:.2rem;margin-top:1px}
-.pill{display:flex;align-items:center;gap:.35rem;background:rgba(11,1,4,.9);border:1px solid var(--b2);
-  border-radius:20px;padding:2px 10px 2px 7px;font-size:.67rem;color:var(--textd)}
-.pill-dot{width:5px;height:5px;border-radius:50%;background:var(--red2);box-shadow:0 0 7px var(--red2);animation:blink 2s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-#topbar-r{margin-left:auto;display:flex;align-items:center;gap:.45rem}
-.tbtn{background:none;border:1px solid var(--b2);color:var(--textd);border-radius:5px;
-  padding:3px 9px;font-size:.65rem;cursor:pointer;transition:all .15s;font-family:inherit;letter-spacing:.05em}
-.tbtn:hover{border-color:var(--red);color:var(--red2)}
-.tbtn.on{border-color:var(--red);color:var(--red2);background:rgba(204,34,51,.07)}
+/* ── TOPBAR ─────────────────────────────── */
+#topbar{position:fixed;top:0;left:0;right:0;height:48px;z-index:200;
+  background:rgba(6,8,16,.97);border-bottom:1px solid var(--cyan3);
+  display:flex;align-items:center;padding:0 .8rem;gap:.6rem;
+  backdrop-filter:blur(12px)}
+#raven-cv{display:block;flex-shrink:0;filter:drop-shadow(0 0 8px var(--cyan))}
+.logo-name{font-size:1.05rem;font-weight:900;letter-spacing:.24em;color:var(--cyan);
+  text-shadow:0 0 20px rgba(0,245,255,.5)}
+.logo-sub{font-size:.55rem;color:var(--textd);letter-spacing:.2em;text-transform:uppercase}
+.pill{display:flex;align-items:center;gap:.35rem;background:rgba(0,245,255,.05);
+  border:1px solid var(--cyan3);border-radius:3px;padding:2px 8px;font-size:.62rem;color:var(--textd);
+  text-transform:uppercase;letter-spacing:.08em}
+.pill-dot{width:5px;height:5px;border-radius:50%;background:var(--grn);
+  box-shadow:0 0 8px var(--grn);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.sep{width:1px;height:28px;background:var(--b2);margin:0 .2rem}
+#topbar-r{margin-left:auto;display:flex;align-items:center;gap:.4rem}
+.tbtn{background:none;border:1px solid var(--b2);color:var(--textd);border-radius:3px;
+  padding:3px 9px;font-size:.62rem;cursor:pointer;transition:all .15s;
+  font-family:inherit;letter-spacing:.06em;text-transform:uppercase}
+.tbtn:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,245,255,.04)}
+.tbtn.on{border-color:var(--cyan);color:var(--cyan);background:rgba(0,245,255,.07)}
+.tbtn.danger:hover{border-color:var(--red);color:var(--red)}
 
-/* ── LAYOUT ─────────────────────────────────────── */
-#app{position:fixed;inset:0;top:50px;display:flex}
+/* ── LAYOUT ─────────────────────────────── */
+#app{position:fixed;inset:0;top:48px;display:flex}
 
-/* ── LEFT ───────────────────────────────────────── */
-#left{width:268px;flex-shrink:0;background:rgba(8,1,3,.98);border-right:1px solid var(--b1);
-  display:flex;flex-direction:column;z-index:10}
-#lscroll{flex:1;overflow-y:auto;padding:.8rem .75rem}
+/* ── LEFT PANEL ─────────────────────────── */
+#left{width:260px;flex-shrink:0;background:var(--panel);
+  border-right:1px solid var(--b1);display:flex;flex-direction:column;z-index:10}
+#lscroll{flex:1;overflow-y:auto;padding:.65rem .6rem}
 #lscroll::-webkit-scrollbar{width:2px}
 #lscroll::-webkit-scrollbar-thumb{background:var(--b2)}
-.slabel{font-size:.58rem;font-weight:700;color:var(--textd);text-transform:uppercase;
-  letter-spacing:.16em;margin:.75rem 0 .35rem;display:flex;align-items:center;gap:.4rem}
-.slabel:first-child{margin-top:0}
+
+.slabel{font-size:.55rem;font-weight:900;color:var(--cyan);text-transform:uppercase;
+  letter-spacing:.2em;margin:.7rem 0 .3rem;display:flex;align-items:center;gap:.4rem}
 .slabel::after{content:'';flex:1;height:1px;background:var(--b1)}
-.field{margin-bottom:.42rem}
-.field label{font-size:.62rem;color:var(--textd);display:block;margin-bottom:.14rem;letter-spacing:.06em}
-.field input{width:100%;background:var(--s2);border:1px solid var(--b2);border-radius:4px;
-  color:var(--text);font-size:.76rem;padding:.38rem .6rem;outline:none;font-family:inherit;transition:border-color .15s}
-.field input:focus{border-color:var(--red);box-shadow:0 0 0 2px rgba(204,34,51,.06)}
+.slabel:first-child{margin-top:0}
+
+.field{margin-bottom:.35rem}
+.field label{font-size:.58rem;color:var(--textd);display:block;margin-bottom:.1rem;
+  letter-spacing:.08em;text-transform:uppercase}
+.field input{width:100%;background:rgba(0,245,255,.03);border:1px solid var(--b1);
+  border-radius:3px;color:var(--text);font-size:.72rem;padding:.32rem .55rem;
+  outline:none;font-family:inherit;transition:border-color .15s}
+.field input:focus{border-color:var(--cyan);box-shadow:0 0 0 2px rgba(0,245,255,.05)}
 .field input::placeholder{color:var(--textd)}
 
-.mods{display:grid;grid-template-columns:1fr 1fr;gap:.22rem}
-.mod{display:flex;align-items:center;gap:.38rem;padding:.3rem .4rem;border-radius:4px;
-  border:1px solid var(--b1);cursor:pointer;transition:all .15s;font-size:.67rem}
-.mod:hover{background:rgba(204,34,51,.05);border-color:var(--b2)}
-.mi{font-size:.75rem;width:16px;text-align:center;flex-shrink:0}
-.ml{flex:1;color:var(--textm);font-size:.64rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ms{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--b2);transition:all .3s}
-.mod.running .ms{background:var(--warn);box-shadow:0 0 6px var(--warn);animation:blink .65s infinite}
-.mod.found .ms{background:var(--red2);box-shadow:0 0 8px var(--red2)}
-.mod.error .ms{background:var(--warn)}
-.mod.running{border-color:rgba(255,136,51,.25)}
-.mod.found{border-color:rgba(204,34,51,.3)}
+.mods{display:grid;grid-template-columns:1fr 1fr;gap:.18rem}
+.mod{display:flex;align-items:center;gap:.3rem;padding:.25rem .35rem;border-radius:3px;
+  border:1px solid var(--b1);cursor:pointer;transition:all .15s}
+.mod:hover{background:rgba(0,245,255,.04);border-color:var(--b2)}
+.mi{font-size:.7rem;width:14px;text-align:center;flex-shrink:0}
+.ml{flex:1;color:var(--textm);font-size:.6rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}
+.ms{width:5px;height:5px;border-radius:50%;flex-shrink:0;background:var(--b2);transition:all .3s}
+.mod.running .ms{background:var(--ora);box-shadow:0 0 6px var(--ora);animation:blink .65s infinite}
+.mod.found .ms{background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+.mod.error .ms{background:var(--red)}
+.mod.running{border-color:rgba(255,136,0,.2)}
+.mod.found{border-color:rgba(0,245,255,.25)}
 
-#runBtn{width:100%;padding:.6rem;font-size:.8rem;font-weight:900;letter-spacing:.12em;
-  background:linear-gradient(135deg,#1a0005,#3a0010);border:1px solid var(--dkr);border-radius:6px;
-  color:var(--red2);cursor:pointer;transition:all .2s;margin-top:.65rem;font-family:inherit;
-  text-shadow:0 0 10px rgba(255,34,68,.4)}
-#runBtn:hover:not(:disabled){background:linear-gradient(135deg,#280008,#580018);
-  box-shadow:0 0 22px rgba(204,34,51,.3)}
-#runBtn:disabled{opacity:.28;cursor:not-allowed}
+#runBtn{width:100%;padding:.5rem;font-size:.75rem;font-weight:900;letter-spacing:.14em;
+  text-transform:uppercase;
+  background:linear-gradient(135deg,rgba(0,60,70,.8),rgba(0,100,120,.5));
+  border:1px solid var(--cyan3);border-radius:4px;color:var(--cyan);
+  cursor:pointer;transition:all .2s;margin-top:.55rem;font-family:inherit;
+  text-shadow:0 0 12px rgba(0,245,255,.5)}
+#runBtn:hover:not(:disabled){background:linear-gradient(135deg,rgba(0,80,90,.9),rgba(0,140,160,.5));
+  box-shadow:0 0 22px rgba(0,245,255,.2)}
+#runBtn:disabled{opacity:.25;cursor:not-allowed}
 #runBtn.scanning{animation:scanPulse 1.1s infinite}
-@keyframes scanPulse{0%,100%{box-shadow:0 0 5px rgba(204,34,51,.15)}50%{box-shadow:0 0 28px rgba(204,34,51,.6)}}
+@keyframes scanPulse{0%,100%{box-shadow:0 0 5px rgba(0,245,255,.1)}
+  50%{box-shadow:0 0 28px rgba(0,245,255,.45)}}
 
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:.28rem;margin-top:.6rem}
-.stat{background:var(--s2);border:1px solid var(--b1);border-radius:4px;padding:.38rem;text-align:center}
-.sv{font-size:.95rem;font-weight:700;color:var(--red2);font-family:inherit}
-.sk{font-size:.57rem;color:var(--textd);text-transform:uppercase;letter-spacing:.1em}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:.22rem;margin-top:.5rem}
+.stat{background:rgba(0,245,255,.03);border:1px solid var(--b1);border-radius:3px;
+  padding:.32rem;text-align:center}
+.sv{font-size:.88rem;font-weight:700;color:var(--cyan);font-family:inherit}
+.sk{font-size:.54rem;color:var(--textd);text-transform:uppercase;letter-spacing:.1em}
 
-/* ── CENTER ──────────────────────────────────────── */
+/* ── CENTER ─────────────────────────────── */
 #center{flex:1;position:relative;overflow:hidden}
-#net-canvas{position:absolute;inset:0;display:block;cursor:crosshair}
-#net-canvas.drag{cursor:grabbing}
-#hud{position:absolute;top:.75rem;left:50%;transform:translateX(-50%);
-  text-align:center;pointer-events:none;z-index:5;white-space:nowrap}
-#target-display{font-size:.9rem;font-weight:900;letter-spacing:.18em;color:var(--red2);
-  text-shadow:0 0 18px rgba(255,34,68,.55),0 0 45px rgba(204,34,51,.2)}
-#target-sub{font-size:.58rem;color:var(--textd);letter-spacing:.2em;text-transform:uppercase;margin-top:.12rem}
-#prog-wrap{position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--b1);z-index:10}
-#prog-fill{height:100%;width:0;background:linear-gradient(90deg,var(--dkr),var(--red),var(--red2));
-  transition:width .5s ease;box-shadow:0 0 6px var(--red2)}
 
-/* Node info panel */
+/* Network canvas */
+#net-canvas{position:absolute;inset:0;display:block;cursor:crosshair;z-index:2}
+#net-canvas.drag{cursor:grabbing}
+
+/* Leaflet map */
+#map-container{position:absolute;inset:0;z-index:1;display:none}
+#map-container.show{display:block}
+#map{width:100%;height:100%}
+
+/* Center HUD */
+#hud{position:absolute;top:.6rem;left:50%;transform:translateX(-50%);
+  text-align:center;pointer-events:none;z-index:5;white-space:nowrap}
+#target-display{font-size:.88rem;font-weight:900;letter-spacing:.2em;color:var(--cyan);
+  text-shadow:0 0 18px rgba(0,245,255,.6),0 0 45px rgba(0,200,212,.2)}
+#target-sub{font-size:.55rem;color:var(--textd);letter-spacing:.22em;text-transform:uppercase;margin-top:.1rem}
+
+/* View switcher */
+#view-sw{position:absolute;top:.55rem;right:.55rem;z-index:8;display:flex;gap:.3rem}
+.vsw{background:rgba(6,8,16,.9);border:1px solid var(--b2);color:var(--textd);
+  border-radius:3px;padding:3px 9px;font-size:.6rem;cursor:pointer;
+  font-family:inherit;text-transform:uppercase;letter-spacing:.06em;transition:all .15s}
+.vsw:hover,.vsw.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,245,255,.05)}
+
+/* Progress bar */
+#prog-wrap{position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--b1);z-index:10}
+#prog-fill{height:100%;width:0;
+  background:linear-gradient(90deg,transparent,var(--cyan),var(--cyan2));
+  transition:width .5s ease;box-shadow:0 0 8px var(--cyan)}
+
+/* Node panel */
 #npanel{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
-  width:360px;background:rgba(10,1,4,.97);border:1px solid var(--b2);border-radius:7px;
-  z-index:30;display:none;flex-direction:column;max-height:230px;
-  box-shadow:0 0 28px rgba(180,20,40,.2)}
+  width:370px;background:rgba(6,10,20,.97);border:1px solid var(--b2);border-radius:5px;
+  z-index:30;display:none;flex-direction:column;max-height:240px;
+  box-shadow:0 0 30px rgba(0,245,255,.1)}
 #npanel.show{display:flex}
-#np-h{display:flex;align-items:center;gap:.55rem;padding:.5rem .7rem;
+#np-h{display:flex;align-items:center;gap:.5rem;padding:.45rem .65rem;
   border-bottom:1px solid var(--b1);flex-shrink:0}
-#np-name{font-size:.78rem;font-weight:700;flex:1;letter-spacing:.08em}
-#np-st{font-size:.6rem;color:var(--textd)}
-#np-x{background:none;border:none;color:var(--textd);cursor:pointer;font-size:.85rem;padding:0;font-family:inherit}
-#np-x:hover{color:var(--red2)}
-#np-desc{font-size:.65rem;color:var(--textd);padding:.35rem .7rem;border-bottom:1px solid var(--b1);flex-shrink:0}
-#np-body{overflow-y:auto;padding:.35rem .7rem;flex:1}
+#np-name{font-size:.75rem;font-weight:700;flex:1;letter-spacing:.1em;text-transform:uppercase}
+#np-st{font-size:.58rem;color:var(--textd)}
+#np-x{background:none;border:none;color:var(--textd);cursor:pointer;font-size:.85rem;font-family:inherit}
+#np-x:hover{color:var(--red)}
+#np-desc{font-size:.62rem;color:var(--textd);padding:.3rem .65rem;border-bottom:1px solid var(--b1);flex-shrink:0}
+#np-body{overflow-y:auto;padding:.3rem .65rem;flex:1}
 #np-body::-webkit-scrollbar{width:2px}
 #np-body::-webkit-scrollbar-thumb{background:var(--b2)}
-.npi{font-size:.66rem;color:var(--text);padding:.15rem 0;border-bottom:1px solid var(--b1);
+.npi{font-size:.63rem;color:var(--text);padding:.12rem 0;border-bottom:1px solid rgba(26,34,53,.4);
   word-break:break-all;font-family:inherit}
 .npi:last-child{border:none}
-.npi.hi{color:var(--red3)}
+.npi.hi{color:var(--cyan)}
 
-/* ── RIGHT ───────────────────────────────────────── */
-#right{width:340px;flex-shrink:0;background:rgba(8,1,3,.98);border-left:1px solid var(--b1);
-  display:flex;flex-direction:column;z-index:10}
-#tabs{display:flex;border-bottom:1px solid var(--b1);flex-shrink:0}
-.tab{flex:1;padding:.48rem;font-size:.63rem;font-weight:700;color:var(--textd);cursor:pointer;
-  text-align:center;letter-spacing:.1em;text-transform:uppercase;
-  border-bottom:2px solid transparent;transition:all .15s;font-family:inherit}
+/* ── RIGHT PANEL ────────────────────────── */
+#right{width:330px;flex-shrink:0;background:var(--panel);
+  border-left:1px solid var(--b1);display:flex;flex-direction:column;z-index:10}
+#tabs{display:flex;border-bottom:1px solid var(--b1);flex-shrink:0;overflow-x:auto}
+#tabs::-webkit-scrollbar{height:0}
+.tab{flex-shrink:0;padding:.42rem .6rem;font-size:.58rem;font-weight:700;color:var(--textd);
+  cursor:pointer;text-align:center;letter-spacing:.1em;text-transform:uppercase;
+  border-bottom:2px solid transparent;transition:all .15s;font-family:inherit;white-space:nowrap}
 .tab:hover{color:var(--textm)}
-.tab.active{color:var(--red2);border-bottom-color:var(--red)}
+.tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
 .panel{flex:1;display:none;flex-direction:column;overflow:hidden}
 .panel.show{display:flex}
 
 /* Console */
-#log-out{flex:1;padding:.55rem;font-size:.67rem;line-height:1.72;overflow-y:auto;font-family:inherit}
+#log-out{flex:1;padding:.5rem;font-size:.63rem;line-height:1.75;
+  overflow-y:auto;font-family:inherit}
 #log-out::-webkit-scrollbar{width:2px}
 #log-out::-webkit-scrollbar-thumb{background:var(--b2)}
-.ll{margin-bottom:.08rem;animation:llIn .18s ease}
-@keyframes llIn{from{opacity:0;transform:translateX(3px)}to{opacity:1}}
-.ll.running{color:#ffcc44}.ll.found{color:var(--red3)}.ll.info{color:var(--textd)}
-.ll.error{color:var(--warn)}.ll.done{color:var(--info)}.ll.stream{color:var(--textm)}
-.lts{color:var(--textd);margin-right:.3rem;font-size:.58rem}
-.lmod{display:inline-block;font-size:.56rem;font-weight:700;padding:0 3px;
-  border-radius:2px;margin-right:.25rem;letter-spacing:.05em}
+.ll{margin-bottom:.06rem;animation:llIn .18s ease}
+@keyframes llIn{from{opacity:0;transform:translateX(4px)}to{opacity:1}}
+.ll.running{color:#ffaa33}.ll.found{color:var(--cyan)}.ll.info{color:var(--textd)}
+.ll.error{color:var(--red)}.ll.done{color:var(--grn)}.ll.stream{color:var(--textm)}
+.lts{color:var(--textd);margin-right:.25rem;font-size:.55rem}
+.lmod{display:inline-block;font-size:.52rem;font-weight:700;padding:0 3px;
+  border-radius:2px;margin-right:.22rem;letter-spacing:.04em}
 
 /* Results */
 #res-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
-#res-tb{padding:.4rem .65rem;border-bottom:1px solid var(--b1);flex-shrink:0;display:flex;gap:.35rem;align-items:center}
+#res-tb{padding:.35rem .55rem;border-bottom:1px solid var(--b1);flex-shrink:0;display:flex;gap:.3rem;align-items:center;flex-wrap:wrap}
 .rtbtn{background:none;border:1px solid var(--b2);color:var(--textd);border-radius:3px;
-  padding:2px 7px;font-size:.6rem;cursor:pointer;font-family:inherit;transition:all .15s}
-.rtbtn:hover{border-color:var(--red);color:var(--red2)}
-#res-content{flex:1;overflow-y:auto;padding:.55rem}
+  padding:2px 7px;font-size:.58rem;cursor:pointer;font-family:inherit;transition:all .15s;text-transform:uppercase}
+.rtbtn:hover{border-color:var(--cyan);color:var(--cyan)}
+#res-content{flex:1;overflow-y:auto;padding:.5rem}
 #res-content::-webkit-scrollbar{width:2px}
 #res-content::-webkit-scrollbar-thumb{background:var(--b2)}
-.rsec{margin-bottom:.75rem}
-.rsec-h{font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;
-  margin-bottom:.28rem;padding:.2rem .35rem;border-radius:3px;border-left:2px solid currentColor}
-.ritem{background:var(--s2);border:1px solid var(--b1);border-radius:3px;
-  padding:.25rem .45rem;font-size:.64rem;color:var(--text);margin-bottom:.14rem;
+.rsec{margin-bottom:.85rem}
+.rsec-h{font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.14em;
+  margin-bottom:.25rem;padding:.18rem .4rem;border-radius:2px;
+  border-left:2px solid currentColor;display:flex;align-items:center;justify-content:space-between}
+.rsec-cnt{font-size:.52rem;opacity:.5}
+.ritem{background:rgba(0,245,255,.02);border:1px solid var(--b1);border-radius:2px;
+  padding:.22rem .4rem;font-size:.62rem;color:var(--text);margin-bottom:.1rem;
   word-break:break-all;font-family:inherit}
-.ritem.hi{border-color:rgba(204,34,51,.4);color:var(--red3)}
-.ritem.star::before{content:"★ ";color:var(--warn)}
-#ai-stream-box{font-size:.69rem;line-height:1.88;color:var(--text);white-space:pre-wrap;
-  padding:.4rem .5rem;background:rgba(180,30,50,.03);border:1px solid var(--b2);
-  border-radius:4px;font-family:inherit}
+.ritem.hi{border-color:rgba(0,245,255,.25);color:var(--cyan)}
+.ritem.star::before{content:"★ ";color:var(--yel)}
+.ritem a{color:var(--cyan);text-decoration:none}
+.ritem a:hover{text-decoration:underline}
+#ai-stream-box{font-size:.67rem;line-height:1.88;color:var(--text);white-space:pre-wrap;
+  padding:.4rem .5rem;background:rgba(0,245,255,.02);border:1px solid var(--b1);
+  border-radius:3px;font-family:inherit}
+
+/* RavenDB panel */
+#rdb-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#rdb-head{padding:.35rem .55rem;border-bottom:1px solid var(--b1);flex-shrink:0}
+#rdb-add-form{padding:.4rem .55rem;border-bottom:1px solid var(--b1);flex-shrink:0}
+.rdbf{display:flex;flex-direction:column;gap:.2rem}
+.rdbf input,
+.rdbf select{width:100%;background:rgba(0,245,255,.03);border:1px solid var(--b1);
+  border-radius:3px;color:var(--text);font-size:.66rem;padding:.28rem .45rem;
+  outline:none;font-family:inherit;transition:border-color .15s}
+.rdbf input:focus,.rdbf select:focus{border-color:var(--cyan)}
+.rdbf input::placeholder{color:var(--textd)}
+.rdbf select option{background:#060810}
+#rdb-list{flex:1;overflow-y:auto;padding:.4rem .55rem}
+#rdb-list::-webkit-scrollbar{width:2px}
+#rdb-list::-webkit-scrollbar-thumb{background:var(--b2)}
+.rdb-item{background:rgba(0,245,255,.02);border:1px solid var(--b1);border-radius:3px;
+  padding:.3rem .45rem;margin-bottom:.22rem;display:flex;align-items:flex-start;gap:.4rem}
+.rdb-info{flex:1;min-width:0}
+.rdb-name{font-size:.66rem;font-weight:700;color:var(--cyan);margin-bottom:.08rem;text-transform:uppercase}
+.rdb-url{font-size:.57rem;color:var(--textd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rdb-type{font-size:.52rem;color:var(--mag);text-transform:uppercase;letter-spacing:.06em}
+.rdb-hits{font-size:.55rem;color:var(--grn)}
+.rdb-btns{display:flex;flex-direction:column;gap:.14rem;flex-shrink:0}
+.rdb-btn{background:none;border:1px solid var(--b1);border-radius:2px;color:var(--textd);
+  cursor:pointer;font-family:inherit;font-size:.55rem;padding:1px 5px;transition:all .15s}
+.rdb-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.rdb-btn.del:hover{border-color:var(--red);color:var(--red)}
+.rdb-btn.off{color:var(--textd);border-color:var(--b1)}
+.rdb-btn.on{color:var(--grn);border-color:rgba(0,255,136,.3)}
+.rdb-empty{font-size:.65rem;color:var(--textd);text-align:center;padding:.8rem;letter-spacing:.06em}
+
+/* Map layer panel */
+#map-layers{position:absolute;top:.55rem;left:.55rem;z-index:50;
+  background:rgba(6,8,16,.97);border:1px solid var(--b2);border-radius:4px;
+  width:220px;display:none}
+#map-layers.show{display:block}
+.ml-head{padding:.4rem .55rem;border-bottom:1px solid var(--b1);font-size:.65rem;font-weight:700;
+  color:var(--cyan);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between}
+.ml-item{padding:.3rem .55rem;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:.4rem;cursor:pointer}
+.ml-item:last-child{border:none}
+.ml-icon{font-size:.75rem;width:18px;text-align:center}
+.ml-name{flex:1;font-size:.64rem;color:var(--textm);text-transform:uppercase;letter-spacing:.06em}
+.ml-cnt{font-size:.58rem;color:var(--textd)}
+.ml-toggle{font-size:.58rem;font-weight:700;padding:1px 6px;border-radius:2px;
+  border:1px solid;cursor:pointer;font-family:inherit;text-transform:uppercase}
+.ml-toggle.on{color:var(--cyan);border-color:var(--cyan);background:rgba(0,245,255,.08)}
+.ml-toggle.off{color:var(--textd);border-color:var(--b2);background:none}
+
+/* Threat alerts */
+#alert-feed{position:absolute;right:.55rem;top:3rem;z-index:40;width:230px;
+  display:none;flex-direction:column;gap:.3rem;max-height:55vh;overflow:hidden}
+#alert-feed.show{display:flex}
+.alert-card{background:rgba(6,8,16,.97);border:1px solid;border-radius:4px;
+  padding:.35rem .5rem;font-size:.62rem;animation:alertIn .3s ease}
+@keyframes alertIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+.alert-lvl{font-weight:900;font-size:.58rem;letter-spacing:.12em}
+.alert-txt{color:var(--textm);margin-top:.15rem;line-height:1.55}
+.alert-src{font-size:.52rem;color:var(--textd);margin-top:.1rem}
 
 /* Chat */
-#chat-msgs{flex:1;overflow-y:auto;padding:.55rem;display:flex;flex-direction:column;gap:.55rem}
+#chat-msgs{flex:1;overflow-y:auto;padding:.5rem;display:flex;flex-direction:column;gap:.5rem}
 #chat-msgs::-webkit-scrollbar{width:2px}
 #chat-msgs::-webkit-scrollbar-thumb{background:var(--b2)}
-.cm{max-width:94%;padding:.42rem .6rem;border-radius:6px;font-size:.72rem;
-  line-height:1.72;white-space:pre-wrap;word-break:break-word;font-family:inherit}
-.cm.user{align-self:flex-end;background:#1c0408;border:1px solid var(--b2);color:#f0d0d5}
+.cm{max-width:95%;padding:.4rem .55rem;border-radius:4px;font-size:.68rem;
+  line-height:1.78;white-space:pre-wrap;word-break:break-word;font-family:inherit}
+.cm.user{align-self:flex-end;background:rgba(0,245,255,.05);border:1px solid var(--cyan3);color:var(--text)}
 .cm.assistant{align-self:flex-start;background:var(--s2);border:1px solid var(--b1);color:var(--text)}
-#cinput-row{display:flex;gap:.32rem;padding:.45rem;border-top:1px solid var(--b1);flex-shrink:0}
-#cinput{flex:1;background:var(--s2);border:1px solid var(--b2);border-radius:4px;
-  color:var(--text);font-size:.71rem;padding:.32rem .5rem;outline:none;font-family:inherit;resize:none}
-#cinput:focus{border-color:var(--red)}
-#csend{background:var(--dkr);color:var(--red3);border:1px solid var(--red);border-radius:4px;
-  padding:.32rem .65rem;font-size:.7rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
-#csend:hover{background:var(--red);color:#fff}
+#cinput-row{display:flex;gap:.3rem;padding:.4rem;border-top:1px solid var(--b1);flex-shrink:0}
+#cinput{flex:1;background:rgba(0,245,255,.03);border:1px solid var(--b1);border-radius:3px;
+  color:var(--text);font-size:.68rem;padding:.3rem .45rem;outline:none;font-family:inherit;resize:none}
+#cinput:focus{border-color:var(--cyan)}
+#csend{background:rgba(0,245,255,.08);color:var(--cyan);border:1px solid var(--cyan3);
+  border-radius:3px;padding:.3rem .6rem;font-size:.68rem;font-weight:700;cursor:pointer;
+  font-family:inherit;transition:all .15s;text-transform:uppercase}
+#csend:hover{background:rgba(0,245,255,.15)}
+
+/* Auth modal */
+#auth-modal{position:fixed;inset:0;z-index:9100;background:rgba(4,6,12,.92);
+  backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center}
+#auth-modal.show{display:flex}
+#auth-box{background:rgba(6,10,18,.99);border:1px solid var(--b2);border-radius:6px;
+  width:340px;padding:1.5rem;box-shadow:0 0 40px rgba(0,245,255,.08)}
+.auth-logo{font-size:1.1rem;font-weight:900;letter-spacing:.22em;color:var(--cyan);
+  text-shadow:0 0 16px rgba(0,245,255,.4);margin-bottom:.3rem;text-align:center}
+.auth-sub{font-size:.6rem;color:var(--textd);text-align:center;letter-spacing:.12em;margin-bottom:1rem}
+.auth-tabs{display:flex;gap:.3rem;margin-bottom:.9rem;border-bottom:1px solid var(--b1);padding-bottom:.5rem}
+.auth-tab{flex:1;text-align:center;font-size:.65rem;font-weight:700;color:var(--textd);
+  cursor:pointer;letter-spacing:.1em;text-transform:uppercase;padding:.2rem}
+.auth-tab.active{color:var(--cyan)}
+.auth-field{margin-bottom:.5rem}
+.auth-field label{font-size:.6rem;color:var(--textd);display:block;margin-bottom:.15rem;text-transform:uppercase;letter-spacing:.08em}
+.auth-field input{width:100%;background:rgba(0,245,255,.03);border:1px solid var(--b1);border-radius:3px;
+  color:var(--text);font-size:.75rem;padding:.4rem .55rem;outline:none;font-family:inherit;transition:border-color .15s}
+.auth-field input:focus{border-color:var(--cyan)}
+.auth-field input::placeholder{color:var(--textd)}
+.auth-btn{width:100%;padding:.5rem;font-size:.75rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase;
+  background:linear-gradient(135deg,rgba(0,60,70,.8),rgba(0,100,120,.5));border:1px solid var(--cyan3);
+  border-radius:4px;color:var(--cyan);cursor:pointer;font-family:inherit;
+  text-shadow:0 0 10px rgba(0,245,255,.4);transition:all .2s;margin-top:.3rem}
+.auth-btn:hover{box-shadow:0 0 20px rgba(0,245,255,.15)}
+.auth-err{font-size:.65rem;color:var(--red);text-align:center;margin-top:.4rem;min-height:.8rem}
+.auth-close{position:absolute;top:.8rem;right:.8rem;background:none;border:none;color:var(--textd);
+  cursor:pointer;font-size:.85rem;font-family:inherit}
+
+/* Profile panel */
+#profile-panel{position:fixed;top:48px;right:0;bottom:0;width:300px;z-index:150;
+  background:rgba(6,8,16,.99);border-left:1px solid var(--b2);
+  transform:translateX(100%);transition:transform .25s ease;overflow-y:auto}
+#profile-panel.open{transform:none}
+#profile-panel::-webkit-scrollbar{width:2px}
+#profile-panel::-webkit-scrollbar-thumb{background:var(--b2)}
+#pp-banner{height:80px;background:linear-gradient(135deg,var(--b1),var(--cyan3));
+  position:relative;background-size:cover;background-position:center}
+#pp-avatar{width:52px;height:52px;border-radius:50%;border:2px solid var(--cyan);
+  position:absolute;bottom:-26px;left:.8rem;background:var(--s2);object-fit:cover}
+#pp-body{padding:2rem .9rem .9rem;margin-top:.8rem}
+#pp-uname{font-size:.88rem;font-weight:900;color:var(--cyan);letter-spacing:.08em}
+#pp-rank{font-size:.58rem;color:var(--mag);text-transform:uppercase;letter-spacing:.12em;margin-top:.1rem}
+#pp-bio{font-size:.65rem;color:var(--textm);margin-top:.4rem;line-height:1.6}
+.pp-section{margin-top:.9rem;padding-top:.6rem;border-top:1px solid var(--b1)}
+.pp-label{font-size:.58rem;color:var(--textd);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.3rem}
+.pp-field input{width:100%;background:rgba(0,245,255,.03);border:1px solid var(--b1);border-radius:3px;
+  color:var(--text);font-size:.7rem;padding:.3rem .45rem;outline:none;font-family:inherit;margin-bottom:.2rem;transition:border-color .15s}
+.pp-field input:focus{border-color:var(--cyan)}
+.pp-save{width:100%;padding:.4rem;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+  background:rgba(0,245,255,.06);border:1px solid var(--cyan3);border-radius:3px;color:var(--cyan);
+  cursor:pointer;font-family:inherit;transition:all .15s;margin-top:.3rem}
+.pp-save:hover{background:rgba(0,245,255,.12)}
+.pp-apikey{font-size:.58rem;color:var(--textd);word-break:break-all;background:var(--s2);
+  padding:.3rem .4rem;border-radius:3px;margin-top:.2rem;border:1px solid var(--b1)}
+.pp-logout{width:100%;padding:.4rem;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+  background:none;border:1px solid var(--b2);border-radius:3px;color:var(--red2);
+  cursor:pointer;font-family:inherit;transition:all .15s;margin-top:.4rem}
+.pp-logout:hover{border-color:var(--red);color:var(--red)}
+#pp-close-btn{position:absolute;top:.5rem;right:.5rem;background:none;border:none;
+  color:var(--textd);cursor:pointer;font-size:.85rem;font-family:inherit;z-index:2}
 </style>
 </head>
 <body>
 <div id="feather-layer"></div>
 
+<!-- AUTH MODAL -->
+<div id="auth-modal">
+  <div id="auth-box" style="position:relative">
+    <button class="auth-close" onclick="closeAuth()">✕</button>
+    <div class="auth-logo">RAVENS NEXUS</div>
+    <div class="auth-sub">FSB-LEVEL OSINT PLATFORM</div>
+    <div class="auth-tabs">
+      <div class="auth-tab active" id="at-login" onclick="swAuth('login')">Вход</div>
+      <div class="auth-tab" id="at-reg" onclick="swAuth('reg')">Регистрация</div>
+    </div>
+    <!-- Login -->
+    <div id="af-login">
+      <div class="auth-field"><label>Email / Username</label><input id="l-login" placeholder="user@example.com"></div>
+      <div class="auth-field"><label>Пароль</label><input id="l-pass" type="password" placeholder="••••••••"></div>
+      <button class="auth-btn" onclick="doLogin()">► ВОЙТИ</button>
+    </div>
+    <!-- Register -->
+    <div id="af-reg" style="display:none">
+      <div class="auth-field"><label>Username</label><input id="r-user" placeholder="analyst99"></div>
+      <div class="auth-field"><label>Email</label><input id="r-email" placeholder="user@example.com"></div>
+      <div class="auth-field"><label>Пароль</label><input id="r-pass" type="password" placeholder="мин 8 символов"></div>
+      <button class="auth-btn" onclick="doRegister()">► СОЗДАТЬ АККАУНТ</button>
+    </div>
+    <div class="auth-err" id="auth-err"></div>
+    <div style="text-align:center;margin-top:.7rem">
+      <button class="tbtn" onclick="closeAuth()" style="font-size:.6rem">→ Продолжить без входа</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOPBAR -->
 <div id="topbar">
-  <!-- Canvas-drawn animated raven -->
-  <canvas id="raven-cv" width="44" height="44"></canvas>
+  <canvas id="raven-cv" width="40" height="40"></canvas>
   <div>
     <div class="logo-name">RAVENS</div>
-    <div class="logo-sub">NVIDIA NIM NEXUS &bull; FSB-LEVEL OSINT</div>
+    <div class="logo-sub">NIM NEXUS · FSB OSINT</div>
   </div>
   <div class="pill"><span class="pill-dot"></span>nemotron-ultra-550b</div>
+  <div class="pill" style="color:var(--textd);font-size:.58rem" id="sys-status">SYS.STATUS: ONLINE</div>
   <div id="topbar-r">
-    <button class="tbtn" id="audioBtn" onclick="toggleAudio()">&#9834; AMBIENT</button>
-    <button class="tbtn" onclick="clearAll()">&#10006; RESET</button>
+    <button class="tbtn" id="audioBtn" onclick="toggleAudio()">♩ AMB</button>
+    <div class="sep"></div>
+    <button class="tbtn" id="authBtn" onclick="showAuth()">► LOGIN</button>
+    <button class="tbtn" id="profileBtn" onclick="toggleProfile()" style="display:none">👤</button>
+    <button class="tbtn danger" onclick="clearAll()">✕ RESET</button>
+  </div>
+</div>
+
+<!-- PROFILE PANEL -->
+<div id="profile-panel">
+  <button id="pp-close-btn" onclick="toggleProfile()">✕</button>
+  <div id="pp-banner"></div>
+  <img id="pp-avatar" src="" alt="avatar">
+  <div id="pp-body">
+    <div id="pp-uname">USERNAME</div>
+    <div id="pp-rank">ANALYST</div>
+    <div id="pp-bio"></div>
+    <div class="pp-section">
+      <div class="pp-label">Редактировать профиль</div>
+      <div class="pp-field">
+        <input id="pp-bio-inp" placeholder="Биография...">
+        <input id="pp-avatar-inp" placeholder="URL аватара (https://...)">
+        <input id="pp-banner-inp" placeholder="URL баннера (https://...)">
+        <input id="pp-newpass" type="password" placeholder="Новый пароль (опц.)">
+        <input id="pp-curpass" type="password" placeholder="Текущий пароль">
+      </div>
+      <button class="pp-save" onclick="saveProfile()">СОХРАНИТЬ</button>
+    </div>
+    <div class="pp-section">
+      <div class="pp-label">API Key</div>
+      <div class="pp-apikey" id="pp-apikey">—</div>
+    </div>
+    <button class="pp-logout" onclick="doLogout()">► ВЫЙТИ</button>
   </div>
 </div>
 
 <div id="app">
-  <!-- LEFT PANEL -->
+  <!-- LEFT -->
   <div id="left">
     <div id="lscroll">
-      <div class="slabel">&#9670; ЦЕЛЬ</div>
+      <div class="slabel">// ЦЕЛЬ</div>
       <div class="field"><label>ИМЯ / ПСЕВДОНИМ</label><input id="i-name" placeholder="Иван Петров / darkwolf99"></div>
       <div class="field"><label>USERNAME</label><input id="i-user" placeholder="username / @handle"></div>
       <div class="field"><label>ТЕЛЕФОН</label><input id="i-phone" placeholder="+7 900 000 0000"></div>
       <div class="field"><label>EMAIL</label><input id="i-email" type="email" placeholder="target@email.com"></div>
       <div class="field"><label>ДОМЕН / IP</label><input id="i-domain" placeholder="example.com / 8.8.8.8"></div>
 
-      <div class="slabel">&#9670; МОДУЛИ (15)</div>
+      <div class="slabel">// МОДУЛИ (16)</div>
       <div class="mods">
-        <div class="mod" data-mod="sherlock" onclick="clickMod('sherlock')"><span class="mi" style="color:#dd4466">&#9906;</span><span class="ml">Sherlock</span><span class="ms"></span></div>
-        <div class="mod" data-mod="maigret" onclick="clickMod('maigret')"><span class="mi" style="color:#dd4466">&#9676;</span><span class="ml">Maigret</span><span class="ms"></span></div>
-        <div class="mod" data-mod="holehe" onclick="clickMod('holehe')"><span class="mi" style="color:#cc3388">&#9993;</span><span class="ml">Holehe</span><span class="ms"></span></div>
-        <div class="mod" data-mod="phone" onclick="clickMod('phone')"><span class="mi" style="color:#cc8822">&#8481;</span><span class="ml">Phone</span><span class="ms"></span></div>
-        <div class="mod" data-mod="hibp" onclick="clickMod('hibp')"><span class="mi" style="color:#cc3388">&#9888;</span><span class="ml">HIBP</span><span class="ms"></span></div>
-        <div class="mod" data-mod="social" onclick="clickMod('social')"><span class="mi" style="color:#7733cc">&#9755;</span><span class="ml">Social</span><span class="ms"></span></div>
-        <div class="mod" data-mod="github" onclick="clickMod('github')"><span class="mi" style="color:#7733cc">&#9654;</span><span class="ml">GitHub</span><span class="ms"></span></div>
-        <div class="mod" data-mod="telegram" onclick="clickMod('telegram')"><span class="mi" style="color:#3377cc">&#9992;</span><span class="ml">Telegram</span><span class="ms"></span></div>
-        <div class="mod" data-mod="whois" onclick="clickMod('whois')"><span class="mi" style="color:#3377cc">&#9670;</span><span class="ml">WHOIS</span><span class="ms"></span></div>
-        <div class="mod" data-mod="ip" onclick="clickMod('ip')"><span class="mi" style="color:#3377cc">&#9830;</span><span class="ml">IP Geo</span><span class="ms"></span></div>
-        <div class="mod" data-mod="dorks" onclick="clickMod('dorks')"><span class="mi" style="color:#cc5533">&#9903;</span><span class="ml">G.Dorks</span><span class="ms"></span></div>
-        <div class="mod" data-mod="paste" onclick="clickMod('paste')"><span class="mi" style="color:#886633">&#9744;</span><span class="ml">Paste/Dox</span><span class="ms"></span></div>
-        <div class="mod" data-mod="darkweb" onclick="clickMod('darkweb')"><span class="mi" style="color:#661133">&#9855;</span><span class="ml">Dark Web</span><span class="ms"></span></div>
-        <div class="mod" data-mod="intelx" onclick="clickMod('intelx')"><span class="mi" style="color:#cc5533">&#9878;</span><span class="ml">IntelX</span><span class="ms"></span></div>
-        <div class="mod" data-mod="ai" onclick="clickMod('ai')"><span class="mi" style="color:#44bb77">&#9752;</span><span class="ml">Ravens AI</span><span class="ms"></span></div>
+        <div class="mod" data-mod="sherlock" onclick="clickMod('sherlock')"><span class="mi" style="color:#00f5ff">⊙</span><span class="ml">Sherlock</span><span class="ms"></span></div>
+        <div class="mod" data-mod="maigret" onclick="clickMod('maigret')"><span class="mi" style="color:#00f5ff">◎</span><span class="ml">Maigret</span><span class="ms"></span></div>
+        <div class="mod" data-mod="holehe" onclick="clickMod('holehe')"><span class="mi" style="color:#ff00cc">✉</span><span class="ml">Holehe</span><span class="ms"></span></div>
+        <div class="mod" data-mod="phone" onclick="clickMod('phone')"><span class="mi" style="color:#ff8800">℡</span><span class="ml">Phone</span><span class="ms"></span></div>
+        <div class="mod" data-mod="hibp" onclick="clickMod('hibp')"><span class="mi" style="color:#ff00cc">⚠</span><span class="ml">HIBP</span><span class="ms"></span></div>
+        <div class="mod" data-mod="social" onclick="clickMod('social')"><span class="mi" style="color:#aa44ff">⇢</span><span class="ml">Social</span><span class="ms"></span></div>
+        <div class="mod" data-mod="github" onclick="clickMod('github')"><span class="mi" style="color:#aa44ff">▶</span><span class="ml">GitHub</span><span class="ms"></span></div>
+        <div class="mod" data-mod="telegram" onclick="clickMod('telegram')"><span class="mi" style="color:#3399ff">✈</span><span class="ml">Telegram</span><span class="ms"></span></div>
+        <div class="mod" data-mod="whois" onclick="clickMod('whois')"><span class="mi" style="color:#3399ff">◆</span><span class="ml">WHOIS</span><span class="ms"></span></div>
+        <div class="mod" data-mod="ip" onclick="clickMod('ip')"><span class="mi" style="color:#3399ff">♦</span><span class="ml">IP Geo</span><span class="ms"></span></div>
+        <div class="mod" data-mod="dorks" onclick="clickMod('dorks')"><span class="mi" style="color:#ff8800">∞</span><span class="ml">G.Dorks</span><span class="ms"></span></div>
+        <div class="mod" data-mod="paste" onclick="clickMod('paste')"><span class="mi" style="color:#886633">☐</span><span class="ml">Paste/Dox</span><span class="ms"></span></div>
+        <div class="mod" data-mod="darkweb" onclick="clickMod('darkweb')"><span class="mi" style="color:#660033">⊘</span><span class="ml">DarkWeb</span><span class="ms"></span></div>
+        <div class="mod" data-mod="intelx" onclick="clickMod('intelx')"><span class="mi" style="color:#ff8800">⚙</span><span class="ml">IntelX</span><span class="ms"></span></div>
+        <div class="mod" data-mod="ravendb" onclick="clickMod('ravendb')"><span class="mi" style="color:#ff2244">⬡</span><span class="ml">RavenDB</span><span class="ms"></span></div>
+        <div class="mod" data-mod="ai" onclick="clickMod('ai')"><span class="mi" style="color:#00ff88">⬡</span><span class="ml">Ravens AI</span><span class="ms"></span></div>
       </div>
 
-      <button id="runBtn" onclick="startInv()">&#9654; НАЧАТЬ РАССЛЕДОВАНИЕ</button>
+      <button id="runBtn" onclick="startInv()">► НАЧАТЬ РАССЛЕДОВАНИЕ</button>
       <div class="stats">
         <div class="stat"><div class="sv" id="s-found">0</div><div class="sk">Найдено</div></div>
-        <div class="stat"><div class="sv" id="s-mods">0/15</div><div class="sk">Модулей</div></div>
+        <div class="stat"><div class="sv" id="s-mods">0/16</div><div class="sk">Модулей</div></div>
         <div class="stat"><div class="sv" id="s-time">0s</div><div class="sk">Время</div></div>
         <div class="stat"><div class="sv" id="s-score" style="color:var(--textd)">--</div><div class="sk">Уровень</div></div>
       </div>
     </div>
   </div>
 
-  <!-- CENTER CANVAS -->
+  <!-- CENTER -->
   <div id="center">
+    <!-- OSINT Network canvas -->
     <canvas id="net-canvas"></canvas>
+
+    <!-- Intel MAP -->
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="map-layers">
+        <div class="ml-head">DATA LAYERS <span style="cursor:pointer;color:var(--textd)" onclick="toggleLayerPanel()">−</span></div>
+        <div class="ml-item">
+          <span class="ml-icon" style="color:#00f5ff">✈</span>
+          <span class="ml-name">Aircraft</span>
+          <span class="ml-cnt" id="lc-ac">—</span>
+          <button class="ml-toggle on" id="lt-ac" onclick="toggleLayer('ac')">ON</button>
+        </div>
+        <div class="ml-item">
+          <span class="ml-icon" style="color:#ff00cc">⚡</span>
+          <span class="ml-name">Earthquakes</span>
+          <span class="ml-cnt" id="lc-eq">—</span>
+          <button class="ml-toggle on" id="lt-eq" onclick="toggleLayer('eq')">ON</button>
+        </div>
+        <div class="ml-item">
+          <span class="ml-icon" style="color:#ff8800">◉</span>
+          <span class="ml-name">Threat Intel</span>
+          <span class="ml-cnt" id="lc-th">—</span>
+          <button class="ml-toggle on" id="lt-th" onclick="toggleLayer('th')">ON</button>
+        </div>
+        <div class="ml-item">
+          <span class="ml-icon" style="color:#00ff88">📡</span>
+          <span class="ml-name">ISS Track</span>
+          <span class="ml-cnt" id="lc-iss">LIVE</span>
+          <button class="ml-toggle on" id="lt-iss" onclick="toggleLayer('iss')">ON</button>
+        </div>
+      </div>
+      <div id="alert-feed"></div>
+    </div>
+
     <div id="hud">
       <div id="target-display">RAVENS NEXUS</div>
-      <div id="target-sub">FSB-LEVEL OSINT &bull; 15 MODULES</div>
+      <div id="target-sub">FSB-LEVEL OSINT · 16 MODULES</div>
+    </div>
+    <div id="view-sw">
+      <button class="vsw active" onclick="swView('net')">OSINT NET</button>
+      <button class="vsw" onclick="swView('map')">INTEL MAP</button>
     </div>
     <div id="prog-wrap"><div id="prog-fill"></div></div>
     <div id="npanel">
       <div id="np-h">
-        <span id="np-icon" style="font-size:1rem">&#9752;</span>
+        <span id="np-icon">?</span>
         <span id="np-name">MODULE</span>
         <span id="np-st">[IDLE]</span>
-        <button id="np-x" onclick="closeNP()">&#10005;</button>
+        <button id="np-x" onclick="closeNP()">✕</button>
       </div>
       <div id="np-desc"></div>
       <div id="np-body"></div>
     </div>
   </div>
 
-  <!-- RIGHT PANEL -->
+  <!-- RIGHT -->
   <div id="right">
     <div id="tabs">
       <div class="tab active" onclick="swTab('log')">КОНСОЛЬ</div>
       <div class="tab" onclick="swTab('res')">ДАННЫЕ</div>
+      <div class="tab" onclick="swTab('rdb')">RAVENDB</div>
       <div class="tab" onclick="swTab('chat')">AI ЧАТ</div>
     </div>
+    <!-- Console -->
     <div class="panel show" id="panel-log">
-      <div id="log-out"><div class="ll info"><span class="lts">[INIT]</span>Ravens Nexus v3 готов.</div></div>
+      <div id="log-out"><div class="ll info"><span class="lts">[INIT]</span>Ravens Nexus v4 готов.</div></div>
     </div>
+    <!-- Results -->
     <div class="panel" id="panel-res">
       <div id="res-wrap">
         <div id="res-tb">
-          <button class="rtbtn" onclick="openReport()">&#9670; Открыть отчёт</button>
-          <button class="rtbtn" onclick="clearRes()">&#10006; Очистить</button>
+          <button class="rtbtn" onclick="openReport()">⬡ ОТЧЁТ</button>
+          <button class="rtbtn" onclick="clearRes()">✕ ОЧИСТИТЬ</button>
         </div>
-        <div id="res-content"><div style="color:var(--textd);font-size:.68rem;padding:.3rem">Запустите расследование...</div></div>
+        <div id="res-content"><div style="color:var(--textd);font-size:.66rem;padding:.3rem">Запустите расследование...</div></div>
       </div>
     </div>
+    <!-- RavenDB -->
+    <div class="panel" id="panel-rdb">
+      <div id="rdb-wrap">
+        <div id="rdb-head">
+          <div style="font-size:.62rem;font-weight:700;color:var(--cyan);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.25rem">⬡ RAVENDB — Пользовательские базы</div>
+          <div style="font-size:.6rem;color:var(--textd);line-height:1.55">Добавьте URL-адреса баз данных / пастебинов / Tor-индексаторов. При расследовании система автоматически проверит каждую базу на совпадение с целью.</div>
+        </div>
+        <div id="rdb-add-form">
+          <div class="rdbf">
+            <input id="rdb-name" placeholder="Название базы">
+            <input id="rdb-url" placeholder="https://example.com/search">
+            <input id="rdb-desc" placeholder="Описание (опц.)">
+            <select id="rdb-type">
+              <option value="breach">Breach / Утечка</option>
+              <option value="tor">Tor / Dark Web</option>
+              <option value="paste">Paste / Dox</option>
+              <option value="leak">Leak DB</option>
+              <option value="other">Другое</option>
+            </select>
+            <input id="rdb-kw" placeholder="Ключевые слова: email, phone, ...">
+          </div>
+          <button class="rtbtn" style="margin-top:.3rem;width:100%;padding:.35rem" onclick="addRavenDB()">+ ДОБАВИТЬ БАЗУ</button>
+          <div style="font-size:.57rem;color:var(--textd);margin-top:.2rem" id="rdb-msg"></div>
+        </div>
+        <div id="rdb-list"><div class="rdb-empty" id="rdb-empty">Базы не добавлены.<br><span style="font-size:.57rem">Войдите для сохранения баз.</span></div></div>
+      </div>
+    </div>
+    <!-- AI Chat -->
     <div class="panel" id="panel-chat">
-      <div id="chat-msgs"><div class="cm assistant">RAVENS AI активен. Задай вопрос или запусти расследование — автоматически проанализирую все данные.</div></div>
+      <div id="chat-msgs"><div class="cm assistant">RAVENS AI · Nemotron-Ultra активен. Задай вопрос или запусти расследование — автоматически проанализирую все данные по системе ФСБ.</div></div>
       <div id="cinput-row">
         <textarea id="cinput" rows="2" placeholder="Вопрос..."></textarea>
-        <button id="csend" onclick="sendChat()">&#9658;</button>
+        <button id="csend" onclick="sendChat()">►</button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-// ======================================================
-// CANVAS RAVEN ANIMATION (programmatic, no GIF)
-// ======================================================
+// ═══════════════════════════════════════════════════════
+// CSRF TOKEN (injected server-side)
+// ═══════════════════════════════════════════════════════
+var CSRF = '{{ csrf }}';
+
+// ═══════════════════════════════════════════════════════
+// CANVAS RAVEN ANIMATION
+// ═══════════════════════════════════════════════════════
 (function(){
-  var rc = document.getElementById('raven-cv');
-  var rx = rc.getContext('2d');
-  var t = 0;
-
-  function drawRaven(){
-    requestAnimationFrame(drawRaven);
-    rx.clearRect(0,0,44,44);
-    t += 0.045;
-    var wf = Math.sin(t * 4.5); // -1..1 wing flap
-
-    rx.save();
-    rx.translate(22, 25);
-    rx.shadowColor = '#ff2244';
-    rx.shadowBlur = 7;
-    rx.fillStyle = '#bb1a28';
-
-    // Left wing
-    rx.save();
-    rx.rotate(-0.25 + wf * 0.55);
-    rx.beginPath();
-    rx.moveTo(-1, -1);
-    rx.bezierCurveTo(-10, -6 + wf*4, -18, 0, -14, 7);
-    rx.bezierCurveTo(-9, 10, -3, 5, -1, 0);
-    rx.closePath(); rx.fill(); rx.restore();
-
-    // Right wing
-    rx.save();
-    rx.rotate(0.25 - wf * 0.55);
-    rx.beginPath();
-    rx.moveTo(1, -1);
-    rx.bezierCurveTo(10, -6 + wf*4, 18, 0, 14, 7);
-    rx.bezierCurveTo(9, 10, 3, 5, 1, 0);
-    rx.closePath(); rx.fill(); rx.restore();
-
-    // Body
-    rx.beginPath();
-    rx.ellipse(0, 1, 5, 7, 0, 0, Math.PI*2);
-    rx.fill();
-
-    // Head
-    rx.beginPath();
-    rx.ellipse(1.5, -9, 4, 3.5, 0.2, 0, Math.PI*2);
-    rx.fill();
-
-    // Beak
-    rx.beginPath();
-    rx.moveTo(4, -9); rx.lineTo(11, -8); rx.lineTo(5, -7);
-    rx.closePath(); rx.fill();
-
-    // Tail
-    rx.beginPath();
-    rx.moveTo(-3, 7);
-    rx.bezierCurveTo(-6, 13, -2, 16, 0, 14);
-    rx.bezierCurveTo(2, 16, 6, 13, 3, 7);
-    rx.fill();
-
-    // Glowing eye
-    rx.shadowColor = '#ff0000'; rx.shadowBlur = 16;
-    rx.fillStyle = '#ff1133';
-    rx.beginPath(); rx.arc(4.5, -10, 1.7, 0, Math.PI*2);
-    rx.fill();
-    rx.shadowBlur = 0;
-
-    rx.restore();
+  var rc=document.getElementById('raven-cv'),rx=rc.getContext('2d'),t=0;
+  function draw(){
+    requestAnimationFrame(draw);rx.clearRect(0,0,40,40);t+=0.05;
+    var wf=Math.sin(t*4.5);
+    rx.save();rx.translate(20,22);
+    rx.shadowColor='#00f5ff';rx.shadowBlur=8;rx.fillStyle='#00aabb';
+    // left wing
+    rx.save();rx.rotate(-0.22+wf*0.52);
+    rx.beginPath();rx.moveTo(-1,-1);
+    rx.bezierCurveTo(-9,-5+wf*3.5,-16,0,-13,6);
+    rx.bezierCurveTo(-8,9,-3,4,-1,0);
+    rx.closePath();rx.fill();rx.restore();
+    // right wing
+    rx.save();rx.rotate(0.22-wf*0.52);
+    rx.beginPath();rx.moveTo(1,-1);
+    rx.bezierCurveTo(9,-5+wf*3.5,16,0,13,6);
+    rx.bezierCurveTo(8,9,3,4,1,0);
+    rx.closePath();rx.fill();rx.restore();
+    // body
+    rx.beginPath();rx.ellipse(0,1,4.5,6.5,0,0,Math.PI*2);rx.fill();
+    // head
+    rx.beginPath();rx.ellipse(1.5,-8,3.5,3,0.2,0,Math.PI*2);rx.fill();
+    // beak
+    rx.beginPath();rx.moveTo(4,-8);rx.lineTo(10,-7.5);rx.lineTo(5,-6.5);rx.closePath();rx.fill();
+    // tail
+    rx.beginPath();rx.moveTo(-2.5,6.5);
+    rx.bezierCurveTo(-5,11,-1.5,14,0,12.5);
+    rx.bezierCurveTo(1.5,14,5,11,2.5,6.5);rx.fill();
+    // eye
+    rx.shadowColor='#00ffff';rx.shadowBlur=14;rx.fillStyle='#00ffdd';
+    rx.beginPath();rx.arc(4,-9,1.5,0,Math.PI*2);rx.fill();
+    rx.shadowBlur=0;rx.restore();
   }
-  drawRaven();
+  draw();
 })();
 
-// ======================================================
-// NETWORK CANVAS — 15 NODES, 3 RINGS
-// ======================================================
-var cv = document.getElementById('net-canvas');
-var cx = cv.getContext('2d');
+// ═══════════════════════════════════════════════════════
+// FEATHERS
+// ═══════════════════════════════════════════════════════
+(function(){
+  var l=document.getElementById('feather-layer');
+  for(var i=0;i<28;i++){
+    var f=document.createElement('div');f.className='feather';
+    var dur=12+Math.random()*16,delay=-Math.random()*dur;
+    f.style.cssText='left:'+Math.random()*103+'vw;animation-duration:'+dur+'s;'+
+      'animation-delay:'+delay+'s;--fr:'+(Math.random()*70-35)+'deg;'+
+      '--fo:'+(0.18+Math.random()*.3)+';width:'+(1.2+Math.random()*2)+'px;'+
+      'height:'+(9+Math.random()*12)+'px';
+    l.appendChild(f);
+  }
+})();
 
-// Nodes: target + 14 modules + AI = 16 total
-var NODES = [
-  // CENTER
-  {id:'target',   label:'TARGET',   col:'#cc2233', x3:0,    y3:0,    z3:0,   r:20, desc:'Цель расследования — главный узел'},
-  // RING 1 (identity, r=115)
-  {id:'sherlock', label:'SHERLOCK', col:'#dd4466', x3:115,  y3:0,    z3:-30, r:12, desc:'Поиск на 400+ социальных сетях по username'},
-  {id:'maigret',  label:'MAIGRET',  col:'#dd4466', x3:35,   y3:109,  z3:30,  r:12, desc:'Глубокий профильный анализ личности'},
-  {id:'holehe',   label:'HOLEHE',   col:'#cc3388', x3:-93,  y3:68,   z3:-20, r:12, desc:'Email → регистрации на 120+ сервисах'},
-  {id:'phone',    label:'PHONE',    col:'#cc8822', x3:-93,  y3:-68,  z3:40,  r:12, desc:'Анализ номера телефона: оператор, регион, тип'},
-  {id:'hibp',     label:'HIBP',     col:'#cc3388', x3:35,   y3:-109, z3:-10, r:12, desc:'Have I Been Pwned — базы утечек email'},
-  // RING 2 (social/network, r=195, offset 36°)
-  {id:'social',   label:'SOCIAL',   col:'#7733cc', x3:158,  y3:115,  z3:50,  r:11, desc:'Проверка платформ: VK, Reddit, Steam, Twitch...'},
-  {id:'github',   label:'GITHUB',   col:'#7733cc', x3:-60,  y3:185,  z3:-40, r:11, desc:'GitHub OSINT: репозитории, email, геолокация'},
-  {id:'telegram', label:'TELEGRAM', col:'#3377cc', x3:-195, y3:0,    z3:30,  r:11, desc:'Telegram: профиль, группы, участники'},
-  {id:'whois',    label:'WHOIS',    col:'#3377cc', x3:-60,  y3:-185, z3:-50, r:11, desc:'WHOIS + DNS: регистратор, даты, DNS записи'},
-  {id:'ip',       label:'IP GEO',   col:'#3377cc', x3:158,  y3:-115, z3:20,  r:11, desc:'IP геолокация, ISP, Proxy/VPN, Shodan'},
-  // RING 3 (deep intel, r=265)
-  {id:'dorks',    label:'DORKS',    col:'#cc5533', x3:265,  y3:0,    z3:-60, r:10, desc:'18 Google Dork-запросов для глубокого поиска'},
-  {id:'paste',    label:'PASTE',    col:'#886633', x3:0,    y3:265,  z3:70,  r:10, desc:'Pastebin, Ghostbin, Doxbin — поиск утечек'},
-  {id:'darkweb',  label:'DARKWEB',  col:'#661133', x3:-265, y3:0,    z3:-70, r:10, desc:'Dark Web через Ahmia + .onion dorks'},
-  {id:'intelx',   label:'INTELX',   col:'#cc5533', x3:0,    y3:-265, z3:60,  r:10, desc:'IntelX + breach database dorks'},
-  // SPECIAL: AI
-  {id:'ai',       label:'RAVENS AI',col:'#44bb77', x3:0,    y3:0,    z3:280, r:18, desc:'NVIDIA NIM Nemotron-Ultra — FSB-level анализ'},
+// ═══════════════════════════════════════════════════════
+// NETWORK CANVAS
+// ═══════════════════════════════════════════════════════
+var cv=document.getElementById('net-canvas');
+var cx=cv.getContext('2d');
+var NODES=[
+  {id:'target',  label:'TARGET',   col:'#00f5ff',x3:0,    y3:0,   z3:0,  r:19,desc:'Цель расследования'},
+  {id:'sherlock',label:'SHERLOCK', col:'#00f5ff',x3:110,  y3:0,   z3:-30,r:11,desc:'Поиск на 400+ платформах'},
+  {id:'maigret', label:'MAIGRET',  col:'#00ccdd',x3:34,   y3:105, z3:30, r:11,desc:'Глубокий анализ профилей'},
+  {id:'holehe',  label:'HOLEHE',   col:'#ff00cc',x3:-90,  y3:65,  z3:-20,r:11,desc:'Email → 120+ регистраций'},
+  {id:'phone',   label:'PHONE',    col:'#ff8800',x3:-90,  y3:-65, z3:40, r:11,desc:'Анализ телефона'},
+  {id:'hibp',    label:'HIBP',     col:'#ff00cc',x3:34,   y3:-105,z3:-10,r:11,desc:'Have I Been Pwned'},
+  {id:'social',  label:'SOCIAL',   col:'#aa44ff',x3:150,  y3:110, z3:50, r:10,desc:'VK, Reddit, Twitch...'},
+  {id:'github',  label:'GITHUB',   col:'#aa44ff',x3:-55,  y3:175, z3:-40,r:10,desc:'GitHub OSINT'},
+  {id:'telegram',label:'TELEGRAM', col:'#3399ff',x3:-185, y3:0,   z3:30, r:10,desc:'Telegram профиль'},
+  {id:'whois',   label:'WHOIS',    col:'#3399ff',x3:-55,  y3:-175,z3:-50,r:10,desc:'WHOIS + DNS записи'},
+  {id:'ip',      label:'IP GEO',   col:'#3399ff',x3:150,  y3:-110,z3:20, r:10,desc:'IP геолокация + Shodan'},
+  {id:'dorks',   label:'DORKS',    col:'#ff8800',x3:255,  y3:0,   z3:-60,r:9, desc:'18 Google Dorks'},
+  {id:'paste',   label:'PASTE',    col:'#886633',x3:0,    y3:255, z3:70, r:9, desc:'Paste / Doxbin'},
+  {id:'darkweb', label:'DARKWEB',  col:'#660033',x3:-255, y3:0,   z3:-70,r:9, desc:'Dark Web / Ahmia'},
+  {id:'intelx',  label:'INTELX',   col:'#ff8800',x3:0,    y3:-255,z3:60, r:9, desc:'IntelX + Breach DBs'},
+  {id:'ravendb', label:'RAVENDB',  col:'#ff2244',x3:180,  y3:180, z3:80, r:10,desc:'Пользовательские базы'},
+  {id:'ai',      label:'RAVENS AI',col:'#00ff88',x3:0,    y3:0,   z3:275,r:17,desc:'Nemotron-Ultra FSB анализ'},
 ];
-
-var EDGES = [
-  // target to ring1
-  [0,1],[0,2],[0,3],[0,4],[0,5],
-  // target to ring2
-  [0,6],[0,7],[0,8],[0,9],[0,10],
-  // target to AI
-  [0,15],
-  // ring1 connections
+var EDGES=[
+  [0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,9],[0,10],[0,16],
   [1,2],[2,3],[3,4],[4,5],[5,1],
-  // ring2 connections
   [6,7],[7,8],[8,9],[9,10],[10,6],
-  // ring1 to ring2
   [1,6],[2,7],[3,8],[4,9],[5,10],
-  // ring2 to ring3
-  [6,11],[7,12],[8,13],[9,14],[10,11],
-  // ring3
+  [6,11],[7,12],[8,13],[9,14],[10,11],[15,6],[15,11],
   [11,12],[12,13],[13,14],[14,11],
-  // AI connections
-  [15,1],[15,6],[15,11],[15,3],[15,8],[15,13],
+  [16,1],[16,6],[16,11],[16,3],[16,8],[16,15],
 ];
-
-var NS = {}, modResults = {};
-NODES.forEach(function(n){ NS[n.id]={state:'idle'}; modResults[n.id]=[]; });
-
-var parts=[], stars=[];
-var rotY=0.3, rotX=-0.15, zoom=1;
-var autoRot=true, isDrag=false, prevX=0, prevY=0, lastPart=0;
+var NS={},modResults={};
+NODES.forEach(function(n){NS[n.id]={state:'idle'};modResults[n.id]=[];});
+var parts=[],stars=[];
+var rotY=0.3,rotX=-0.12,zoom=1,autoRot=true,isDrag=false,prevX=0,prevY=0,lastPart=0;
 var activeNode=null;
-
-for(var si=0;si<220;si++){
-  stars.push({x:(Math.random()-.5)*1100,y:(Math.random()-.5)*1100,z:(Math.random()-.5)*600,
-    s:.5+Math.random()*1.2,c:Math.random()});
-}
+for(var si=0;si<200;si++) stars.push({x:(Math.random()-.5)*1200,y:(Math.random()-.5)*1200,z:(Math.random()-.5)*600,s:.4+Math.random()*1.1,c:Math.random()});
 
 function project(x3,y3,z3){
   var c1=Math.cos(rotY),s1=Math.sin(rotY);
-  var x1=x3*c1+z3*s1, z1=-x3*s1+z3*c1;
+  var x1=x3*c1+z3*s1,z1=-x3*s1+z3*c1;
   var c2=Math.cos(rotX),s2=Math.sin(rotX);
-  var y2=y3*c2-z1*s2, z2=y3*s2+z1*c2;
-  var fov=640, dz=fov+z2;
-  var sc=(fov/dz)*zoom;
-  return {x:cv.width/2+x1*sc, y:cv.height/2+y2*sc, z:z2, scale:sc};
+  var y2=y3*c2-z1*s2,z2=y3*s2+z1*c2;
+  var fov=640,dz=fov+z2,sc=(fov/dz)*zoom;
+  return{x:cv.width/2+x1*sc,y:cv.height/2+y2*sc,z:z2,scale:sc};
 }
-
-function h2r(h){
-  return parseInt(h.slice(1,3),16)+','+parseInt(h.slice(3,5),16)+','+parseInt(h.slice(5,7),16);
-}
+function h2r(h){return parseInt(h.slice(1,3),16)+','+parseInt(h.slice(3,5),16)+','+parseInt(h.slice(5,7),16);}
 
 function drawNode(n,p){
   var x=p.x,y=p.y,sc=p.scale,r=n.r*sc;
-  var st=NS[n.id].state, col=n.col, rgb=h2r(col);
-  var t=Date.now()/1000, isAct=(n.id===activeNode);
-
-  // Outer glow
-  var ga=st==='running'?0.32+0.18*Math.sin(t*7):st==='found'?0.18:isAct?0.15:0.05;
-  var gr=r*(st==='running'?2.8:2.2);
+  var st=NS[n.id].state,col=n.col,rgb=h2r(col),isAct=(n.id===activeNode),t=Date.now()/1000;
+  var ga=st==='running'?0.3+0.18*Math.sin(t*7):st==='found'?0.15:isAct?0.12:0.04;
+  var gr=r*(st==='running'?2.8:2.1);
   var gd=cx.createRadialGradient(x,y,0,x,y,gr);
-  gd.addColorStop(0,'rgba('+rgb+','+ga+')');
-  gd.addColorStop(1,'rgba('+rgb+',0)');
-  cx.beginPath();cx.arc(x,y,gr,0,Math.PI*2);
-  cx.fillStyle=gd;cx.fill();
-
-  // Sonar rings when running
+  gd.addColorStop(0,'rgba('+rgb+','+ga+')');gd.addColorStop(1,'rgba('+rgb+',0)');
+  cx.beginPath();cx.arc(x,y,gr,0,Math.PI*2);cx.fillStyle=gd;cx.fill();
   if(st==='running'){
     for(var ri=0;ri<3;ri++){
-      var prog=(t*.55+ri*.333)%1;
+      var prog=(t*.6+ri*.333)%1;
       cx.beginPath();cx.arc(x,y,r*(1+prog*3),0,Math.PI*2);
-      cx.strokeStyle='rgba('+rgb+','+(1-prog)*.45+')';
-      cx.lineWidth=1;cx.stroke();
+      cx.strokeStyle='rgba('+rgb+','+(1-prog)*.4+')';cx.lineWidth=1;cx.stroke();
     }
   }
-
-  // Circle
   cx.beginPath();cx.arc(x,y,r,0,Math.PI*2);
-  var fa=st==='found'?.16:st==='running'?.2:isAct?.1:.04;
-  cx.fillStyle='rgba('+rgb+','+fa+')';cx.fill();
-  cx.strokeStyle='rgba('+rgb+','+(st!=='idle'||isAct?.88:.28)+')';
-  cx.lineWidth=st==='running'?2:isAct?1.5:0.8;cx.stroke();
-
-  // Inner circle
-  cx.beginPath();cx.arc(x,y,r*.45,0,Math.PI*2);
-  cx.strokeStyle='rgba('+rgb+',.1)';cx.lineWidth=.5;cx.stroke();
-
-  // Label
-  var fs=Math.max(7,r*.5);
-  cx.font='700 '+fs+'px "Courier New"';
-  cx.textAlign='center';cx.textBaseline='middle';
-  cx.shadowColor=col;cx.shadowBlur=st!=='idle'?12:isAct?8:0;
-  cx.fillStyle=st==='found'?col:st==='running'?'#ffcc44':isAct?col:'rgba(220,180,185,.75)';
+  cx.fillStyle='rgba('+rgb+','+(st==='found'?.14:st==='running'?.18:isAct?.08:.03)+')';cx.fill();
+  cx.strokeStyle='rgba('+rgb+','+(st!=='idle'||isAct?.85:.22)+')';
+  cx.lineWidth=st==='running'?2:isAct?1.5:.7;cx.stroke();
+  cx.beginPath();cx.arc(x,y,r*.42,0,Math.PI*2);cx.strokeStyle='rgba('+rgb+',.08)';cx.lineWidth=.4;cx.stroke();
+  var fs=Math.max(6,r*.48);
+  cx.font='700 '+fs+'px "Courier New"';cx.textAlign='center';cx.textBaseline='middle';
+  cx.shadowColor=col;cx.shadowBlur=st!=='idle'?10:isAct?6:0;
+  cx.fillStyle=st==='found'?col:st==='running'?'#ffaa33':isAct?col:'rgba(180,220,240,.6)';
   cx.fillText(n.label,x,y);cx.shadowBlur=0;
-
-  // Status
-  if(st!=='idle'){
-    var tag={running:'SCAN',found:'OK',error:'ERR'}[st]||'?';
-    cx.font=Math.max(5,r*.3)+'px "Courier New"';
-    cx.fillStyle='rgba('+rgb+',.45)';cx.textBaseline='top';
-    cx.fillText('['+tag+']',x,y+r+1.5*sc);
-  }
-
-  // Active ring
   if(isAct){
-    cx.beginPath();cx.arc(x,y,r+4.5,0,Math.PI*2);
-    cx.strokeStyle='rgba('+rgb+',.65)';cx.lineWidth=1;
+    cx.beginPath();cx.arc(x,y,r+4,0,Math.PI*2);
+    cx.strokeStyle='rgba('+rgb+',.6)';cx.lineWidth=1;
     cx.setLineDash([3,4]);cx.stroke();cx.setLineDash([]);
   }
 }
-
 function drawEdge(a,b,pA,pB){
-  var aOn=NS[a.id].state!=='idle', bOn=NS[b.id].state!=='idle';
-  var active=aOn&&bOn;
-  var col=active?b.col:'#1a0306';
+  var aOn=NS[a.id].state!=='idle',bOn=NS[b.id].state!=='idle',active=aOn&&bOn;
   cx.beginPath();cx.moveTo(pA.x,pA.y);cx.lineTo(pB.x,pB.y);
-  cx.strokeStyle=active?col+'55':col;
-  cx.lineWidth=active?1:0.3;
-  cx.setLineDash(active?[]:[2,8]);cx.stroke();cx.setLineDash([]);
+  cx.strokeStyle=active?h2r(b.col).split(',').join(',')+',0.35)':active?'':'rgba(26,34,53,0.6)';
+  if(active)cx.strokeStyle='rgba('+h2r(b.col)+',.35)';
+  else cx.strokeStyle='rgba(26,34,53,.5)';
+  cx.lineWidth=active?1:.3;cx.setLineDash(active?[]:[2,8]);cx.stroke();cx.setLineDash([]);
 }
-
-function spawnPart(a,b){
-  parts.push({fx:a.x3,fy:a.y3,fz:a.z3,tx:b.x3,ty:b.y3,tz:b.z3,
-    t:0,speed:.005+Math.random()*.008,col:b.col});
-}
-
-function drawParts(){
-  for(var i=parts.length-1;i>=0;i--){
-    var p=parts[i]; p.t+=p.speed;
-    if(p.t>=1){parts.splice(i,1);continue;}
-    var pA=project(p.fx,p.fy,p.fz),pB=project(p.tx,p.ty,p.tz);
-    var px=pA.x+(pB.x-pA.x)*p.t, py=pA.y+(pB.y-pA.y)*p.t;
-    var t2=Math.max(0,p.t-.08);
-    var px2=pA.x+(pB.x-pA.x)*t2, py2=pA.y+(pB.y-pA.y)*t2;
-    var al=1-p.t*.8, rgb=h2r(p.col);
-    cx.beginPath();cx.arc(px,py,2.2,0,Math.PI*2);
-    cx.fillStyle='rgba('+rgb+','+al+')';cx.fill();
-    cx.beginPath();cx.moveTo(px,py);cx.lineTo(px2,py2);
-    cx.strokeStyle='rgba('+rgb+','+(al*.3)+')';cx.lineWidth=1.2;cx.stroke();
-  }
-}
-
 function render(){
   requestAnimationFrame(render);
-  if(autoRot) rotY+=.003;
-  var W=cv.width, H=cv.height;
-  cx.clearRect(0,0,W,H);
-  // Background
-  var bg=cx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)/1.3);
-  bg.addColorStop(0,'rgba(16,2,4,1)');
-  bg.addColorStop(1,'rgba(4,0,1,1)');
+  if(autoRot)rotY+=.0025;
+  var W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);
+  var bg=cx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)/1.4);
+  bg.addColorStop(0,'rgba(8,14,28,1)');bg.addColorStop(1,'rgba(4,6,12,1)');
   cx.fillStyle=bg;cx.fillRect(0,0,W,H);
-  // Stars
   for(var i=0;i<stars.length;i++){
     var s=stars[i],sp=project(s.x,s.y,s.z);
-    if(sp.x<0||sp.x>W||sp.y<0||sp.y>H) continue;
-    cx.beginPath();cx.arc(sp.x,sp.y,s.s*sp.scale*.2,0,Math.PI*2);
-    cx.fillStyle='rgba(80,15,22,'+(0.12+s.c*.18)+')';cx.fill();
+    if(sp.x<0||sp.x>W||sp.y<0||sp.y>H)continue;
+    cx.beginPath();cx.arc(sp.x,sp.y,s.s*sp.scale*.18,0,Math.PI*2);
+    cx.fillStyle='rgba(0,180,220,'+(0.1+s.c*.15)+')';cx.fill();
   }
-
   var projs=NODES.map(function(n){return project(n.x3,n.y3,n.z3);});
   var order=NODES.map(function(_,i){return i;}).sort(function(a,b){return projs[a].z-projs[b].z;});
-
   EDGES.forEach(function(e){drawEdge(NODES[e[0]],NODES[e[1]],projs[e[0]],projs[e[1]]);});
-
   var now=Date.now();
-  if(now-lastPart>110){
+  if(now-lastPart>100){
     EDGES.forEach(function(e){
       var a=NODES[e[0]],b=NODES[e[1]];
       if(NS[a.id].state!=='idle'&&NS[b.id].state!=='idle'){
-        if(Math.random()<.35) spawnPart(a,b);
-        if(Math.random()<.15) spawnPart(b,a);
+        if(Math.random()<.3)parts.push({fx:a.x3,fy:a.y3,fz:a.z3,tx:b.x3,ty:b.y3,tz:b.z3,t:0,speed:.005+Math.random()*.008,col:b.col});
       }
-    });
-    lastPart=now;
+    });lastPart=now;
   }
-  drawParts();
+  for(var i=parts.length-1;i>=0;i--){
+    var p=parts[i];p.t+=p.speed;if(p.t>=1){parts.splice(i,1);continue;}
+    var pA=project(p.fx,p.fy,p.fz),pB=project(p.tx,p.ty,p.tz);
+    var px=pA.x+(pB.x-pA.x)*p.t,py=pA.y+(pB.y-pA.y)*p.t;
+    var t2=Math.max(0,p.t-.07);var px2=pA.x+(pB.x-pA.x)*t2,py2=pA.y+(pB.y-pA.y)*t2;
+    var al=1-p.t*.8,rgb2=h2r(p.col);
+    cx.beginPath();cx.arc(px,py,2,0,Math.PI*2);cx.fillStyle='rgba('+rgb2+','+al+')';cx.fill();
+    cx.beginPath();cx.moveTo(px,py);cx.lineTo(px2,py2);
+    cx.strokeStyle='rgba('+rgb2+','+(al*.3)+')';cx.lineWidth=1;cx.stroke();
+  }
   order.forEach(function(i){drawNode(NODES[i],projs[i]);});
 }
-
-function resize(){
-  var c=document.getElementById('center');
-  cv.width=c.clientWidth;cv.height=c.clientHeight;
-}
+function resize(){var c=document.getElementById('center');cv.width=c.clientWidth;cv.height=c.clientHeight;}
 window.addEventListener('resize',resize);resize();render();
-
-// Mouse
 cv.addEventListener('mousedown',function(e){isDrag=false;prevX=e.clientX;prevY=e.clientY;});
 window.addEventListener('mousemove',function(e){
   if(e.buttons&&Math.abs(e.clientX-prevX)+Math.abs(e.clientY-prevY)>3){
-    isDrag=true;autoRot=false;
-    rotY+=(e.clientX-prevX)*.006;rotX+=(e.clientY-prevY)*.006;
+    isDrag=true;autoRot=false;rotY+=(e.clientX-prevX)*.006;rotX+=(e.clientY-prevY)*.006;
     prevX=e.clientX;prevY=e.clientY;cv.classList.add('drag');
   }
 });
-window.addEventListener('mouseup',function(){
-  cv.classList.remove('drag');
-  setTimeout(function(){autoRot=true;},6000);
-});
-cv.addEventListener('wheel',function(e){
-  e.preventDefault();
-  zoom=Math.max(.3,Math.min(2.6,zoom-e.deltaY*.001));
-},{passive:false});
+window.addEventListener('mouseup',function(){cv.classList.remove('drag');setTimeout(function(){autoRot=true;},6000);});
+cv.addEventListener('wheel',function(e){e.preventDefault();zoom=Math.max(.3,Math.min(2.5,zoom-e.deltaY*.001));},{passive:false});
 cv.addEventListener('click',function(e){
-  if(isDrag) return;
-  var rect=cv.getBoundingClientRect();
-  var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  if(isDrag)return;
+  var rect=cv.getBoundingClientRect(),mx=e.clientX-rect.left,my=e.clientY-rect.top;
   var projs=NODES.map(function(n){return project(n.x3,n.y3,n.z3);});
   var hit=null;
-  NODES.forEach(function(n,i){
-    var p=projs[i],r=(n.r*p.scale)+10;
-    var dx=mx-p.x,dy=my-p.y;
-    if(dx*dx+dy*dy<r*r) hit=n;
-  });
+  NODES.forEach(function(n,i){var p=projs[i],r=(n.r*p.scale)+10,dx=mx-p.x,dy=my-p.y;if(dx*dx+dy*dy<r*r)hit=n;});
   if(hit){activeNode=hit.id;showNP(hit);}
   else if(!document.getElementById('npanel').contains(e.target)){activeNode=null;closeNP();}
 });
 
-// ======================================================
-// NODE INFO PANEL
-// ======================================================
+// Node panel
 var NODE_ICONS={target:'[T]',sherlock:'[S]',maigret:'[M]',holehe:'[@]',phone:'[P]',
   hibp:'[!]',social:'[So]',github:'[Gh]',telegram:'[TG]',whois:'[W]',
-  ip:'[IP]',dorks:'[D]',paste:'[Pa]',darkweb:'[DW]',intelx:'[IX]',ai:'[AI]'};
-
+  ip:'[IP]',dorks:'[D]',paste:'[Pa]',darkweb:'[DW]',intelx:'[IX]',ravendb:'[RDB]',ai:'[AI]'};
 function showNP(node){
   var st=NS[node.id].state;
   document.getElementById('np-icon').textContent=NODE_ICONS[node.id]||'?';
@@ -636,158 +825,434 @@ function showNP(node){
   document.getElementById('np-name').style.color=node.col;
   document.getElementById('np-st').textContent='['+st.toUpperCase()+']';
   document.getElementById('np-desc').textContent=node.desc;
-  var body=document.getElementById('np-body');
-  body.innerHTML='';
+  var body=document.getElementById('np-body');body.innerHTML='';
   var items=modResults[node.id]||[];
-  if(!items.length){
-    var d=document.createElement('div');d.className='npi';
-    d.style.color='var(--textd)';d.textContent='Нет данных';body.appendChild(d);
-  } else {
-    items.slice(0,35).forEach(function(txt){
-      var d=document.createElement('div');d.className='npi hi';d.textContent=txt;body.appendChild(d);
-    });
-    if(items.length>35){
-      var d=document.createElement('div');d.className='npi';
-      d.style.color='var(--textd)';d.textContent='...ещё '+(items.length-35);body.appendChild(d);
-    }
+  if(!items.length){var d=document.createElement('div');d.className='npi';d.style.color='var(--textd)';d.textContent='Нет данных';body.appendChild(d);}
+  else{items.slice(0,35).forEach(function(txt){var d=document.createElement('div');d.className='npi hi';d.textContent=txt;body.appendChild(d);});
+    if(items.length>35){var d=document.createElement('div');d.className='npi';d.style.color='var(--textd)';d.textContent='...ещё '+(items.length-35);body.appendChild(d);}
   }
   document.getElementById('npanel').classList.add('show');
 }
 function closeNP(){document.getElementById('npanel').classList.remove('show');}
-function clickMod(id){
-  var n=NODES.find(function(x){return x.id===id;});
-  if(n){activeNode=id;showNP(n);}
+function clickMod(id){var n=NODES.find(function(x){return x.id===id;});if(n){activeNode=id;showNP(n);}}
+
+// ═══════════════════════════════════════════════════════
+// VIEW SWITCHER
+// ═══════════════════════════════════════════════════════
+var leafletMap=null,mapInited=false;
+var layerStates={ac:true,eq:true,th:true,iss:true};
+var layerData={ac:[],eq:[],th:[],iss:null};
+var leafletLayers={ac:null,eq:null,th:null,iss:null};
+
+function swView(v){
+  document.querySelectorAll('.vsw').forEach(function(b){b.classList.toggle('active',b.textContent.toLowerCase().includes(v==='net'?'osint':'intel'));});
+  document.getElementById('net-canvas').style.display=v==='net'?'block':'none';
+  var mc=document.getElementById('map-container');
+  mc.classList.toggle('show',v==='map');
+  if(v==='map'&&!mapInited){initMap();mapInited=true;}
 }
 
-// ======================================================
-// FEATHERS
-// ======================================================
-(function(){
-  var layer=document.getElementById('feather-layer');
-  for(var i=0;i<32;i++){
-    var f=document.createElement('div');f.className='feather';
-    var dur=10+Math.random()*14, delay=-Math.random()*dur;
-    f.style.cssText='left:'+Math.random()*103+'vw;animation-duration:'+dur+'s;'+
-      'animation-delay:'+delay+'s;--fr:'+(Math.random()*70-35)+'deg;'+
-      '--fo:'+(0.28+Math.random()*.4)+';width:'+(1.5+Math.random()*2.5)+'px;'+
-      'height:'+(10+Math.random()*14)+'px';
-    layer.appendChild(f);
-  }
-})();
+function initMap(){
+  leafletMap=L.map('map',{zoomControl:false,attributionControl:false}).setView([20,0],2);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    subdomains:'abcd',maxZoom:19,attribution:''}).addTo(leafletMap);
+  L.control.zoom({position:'bottomright'}).addTo(leafletMap);
+  document.getElementById('map-layers').classList.add('show');
+  document.getElementById('alert-feed').classList.add('show');
+  loadMapData();
+  setInterval(loadMapData,30000);
+}
 
-// ======================================================
-// WEB AUDIO — DARK AMBIENT
-// ======================================================
-var audioCtx=null, audioOn=false, masterGain=null;
-function buildAudio(){
-  if(audioCtx) return;
-  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-  masterGain=audioCtx.createGain();masterGain.gain.value=0;
-  masterGain.connect(audioCtx.destination);
-  var sr=audioCtx.sampleRate, sec=4;
-  var buf=audioCtx.createBuffer(2,sec*sr,sr);
-  for(var ch=0;ch<2;ch++){
-    var d=buf.getChannelData(ch);
-    for(var s=0;s<d.length;s++) d[s]=(Math.random()*2-1)*Math.pow(1-s/d.length,2.2);
+function loadMapData(){
+  loadAircraftData();loadEarthquakeData();loadThreatData();loadISS();
+}
+
+function createIcon(color,size,symbol){
+  size=size||10;
+  return L.divIcon({className:'',html:'<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+color+';border:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;font-size:'+(size*.5)+'px;color:#fff;box-shadow:0 0 '+size+'px '+color+'40">'+(symbol||'')+'</div>',iconSize:[size,size],iconAnchor:[size/2,size/2]});
+}
+
+function loadAircraftData(){
+  if(!layerStates.ac)return;
+  if(leafletLayers.ac)leafletMap.removeLayer(leafletLayers.ac);
+  var bounds=leafletMap.getBounds();
+  var url='https://opensky-network.org/api/states/all?lamin='+bounds.getSouth()+'&lomin='+bounds.getWest()+'&lamax='+bounds.getNorth()+'&lomax='+bounds.getEast();
+  fetch(url).then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.states)return;
+    var group=L.layerGroup();
+    var cnt=0;
+    d.states.slice(0,120).forEach(function(s){
+      if(!s[6]||!s[5])return;
+      var lat=s[6],lon=s[5],callsign=(s[1]||'???').trim(),alt=s[7]?Math.round(s[7])+'m':'?';
+      var icon=createIcon('#00f5ff',8,'✈');
+      L.marker([lat,lon],{icon:icon}).addTo(group)
+        .bindPopup('<div style="font-family:Courier New;font-size:11px;background:#060810;color:#00f5ff;border:1px solid #263045;padding:6px">'+
+          '<b>'+callsign+'</b><br>Alt: '+alt+'<br>Lat: '+lat.toFixed(4)+' Lon: '+lon.toFixed(4)+'</div>',
+          {className:'',minWidth:140});
+      cnt++;
+    });
+    leafletLayers.ac=group.addTo(leafletMap);
+    document.getElementById('lc-ac').textContent=cnt;
+  }).catch(function(){document.getElementById('lc-ac').textContent='err';});
+}
+
+function loadEarthquakeData(){
+  if(!layerStates.eq)return;
+  if(leafletLayers.eq)leafletMap.removeLayer(leafletLayers.eq);
+  fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson')
+    .then(function(r){return r.json();}).then(function(d){
+    var group=L.layerGroup();
+    d.features.forEach(function(f){
+      var coords=f.geometry.coordinates,mag=f.properties.mag,place=f.properties.place;
+      var col=mag>=6?'#ff2244':mag>=4?'#ff8800':'#ffee00';
+      var icon=createIcon(col,Math.round(6+mag*2));
+      L.marker([coords[1],coords[0]],{icon:icon}).addTo(group)
+        .bindPopup('<div style="font-family:Courier New;font-size:11px;background:#060810;color:#ffee00;border:1px solid #263045;padding:6px">'+
+          '<b>M'+mag+'</b><br>'+place+'</div>',{className:'',minWidth:160});
+    });
+    leafletLayers.eq=group.addTo(leafletMap);
+    document.getElementById('lc-eq').textContent=d.features.length;
+  }).catch(function(){document.getElementById('lc-eq').textContent='err';});
+}
+
+function loadThreatData(){
+  if(!layerStates.th)return;
+  if(leafletLayers.th)leafletMap.removeLayer(leafletLayers.th);
+  var threats=[
+    {lat:48.4,lon:31.2,lvl:7,text:'Украина — мониторинг активности',src:'SigInt'},
+    {lat:35.6,lon:51.4,lvl:5,text:'Иран — сетевая активность',src:'Intel'},
+    {lat:39.9,lon:116.4,lvl:4,text:'Китай — трафик дата-центров',src:'OSINT'},
+    {lat:55.7,lon:37.6,lvl:6,text:'Россия — VPN трафик',src:'NetInt'},
+    {lat:38.9,lon:-77.0,lvl:3,text:'США — публичные источники',src:'OSINT'},
+    {lat:51.5,lon:-0.1,lvl:3,text:'Великобритания — мониторинг',src:'SigInt'},
+    {lat:1.3,lon:103.8,lvl:2,text:'Сингапур — хостинг активность',src:'Intel'},
+  ];
+  var feed=document.getElementById('alert-feed');feed.innerHTML='';
+  var group=L.layerGroup();
+  threats.forEach(function(t,i){
+    var col=t.lvl>=7?'#ff2244':t.lvl>=5?'#ff8800':t.lvl>=3?'#ffee00':'#00f5ff';
+    var icon=createIcon(col,Math.round(8+t.lvl));
+    L.marker([t.lat,t.lon],{icon:icon}).addTo(group)
+      .bindPopup('<div style="font-family:Courier New;font-size:11px;background:#060810;color:'+col+';border:1px solid #263045;padding:6px">'+
+        '<b>!! ALERT LVL '+t.lvl+' !!</b><br>'+t.text+'<br><span style="color:#3a5070">src: '+t.src+'</span></div>',{className:'',minWidth:180});
+    if(i<4){
+      var card=document.createElement('div');
+      card.className='alert-card';card.style.borderColor=col;
+      card.innerHTML='<div class="alert-lvl" style="color:'+col+'">!! ALERT LVL '+t.lvl+' !!</div>'+
+        '<div class="alert-txt">'+t.text+'</div>'+
+        '<div class="alert-src">src: '+t.src+' | '+(new Date()).toTimeString().slice(0,8)+'</div>';
+      feed.appendChild(card);
+    }
+  });
+  leafletLayers.th=group.addTo(leafletMap);
+  document.getElementById('lc-th').textContent=threats.length;
+}
+
+function loadISS(){
+  if(!layerStates.iss)return;
+  fetch('https://api.wheretheiss.at/v1/satellites/25544')
+    .then(function(r){return r.json();}).then(function(d){
+    if(leafletLayers.iss)leafletMap.removeLayer(leafletLayers.iss);
+    var icon=createIcon('#00ff88',14,'📡');
+    leafletLayers.iss=L.marker([d.latitude,d.longitude],{icon:icon})
+      .addTo(leafletMap)
+      .bindPopup('<div style="font-family:Courier New;font-size:11px;background:#060810;color:#00ff88;border:1px solid #263045;padding:6px">'+
+        '<b>ISS</b><br>Lat: '+d.latitude.toFixed(2)+'<br>Lon: '+d.longitude.toFixed(2)+'<br>Alt: '+Math.round(d.altitude)+' km<br>Speed: '+Math.round(d.velocity)+' km/h</div>',{className:'',minWidth:150});
+  }).catch(function(){});
+}
+
+function toggleLayer(layer){
+  layerStates[layer]=!layerStates[layer];
+  var btn=document.getElementById('lt-'+layer);
+  btn.textContent=layerStates[layer]?'ON':'OFF';
+  btn.className='ml-toggle '+(layerStates[layer]?'on':'off');
+  if(!layerStates[layer]&&leafletLayers[layer]){
+    leafletMap.removeLayer(leafletLayers[layer]);leafletLayers[layer]=null;
+  } else {
+    var fns={ac:loadAircraftData,eq:loadEarthquakeData,th:loadThreatData,iss:loadISS};
+    if(fns[layer])fns[layer]();
   }
-  var rev=audioCtx.createConvolver();rev.buffer=buf;
-  rev.connect(masterGain);
-  var filt=audioCtx.createBiquadFilter();
-  filt.type='lowpass';filt.frequency.value=260;filt.Q.value=4;
+}
+function toggleLayerPanel(){
+  var p=document.getElementById('map-layers');
+  var items=p.querySelectorAll('.ml-item');
+  items.forEach(function(i){i.style.display=i.style.display==='none'?'':'none';});
+}
+
+// ═══════════════════════════════════════════════════════
+// AUDIO
+// ═══════════════════════════════════════════════════════
+var audioCtx=null,audioOn=false,masterGain=null;
+function buildAudio(){
+  if(audioCtx)return;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  masterGain=audioCtx.createGain();masterGain.gain.value=0;masterGain.connect(audioCtx.destination);
+  var sr=audioCtx.sampleRate,sec=4,buf=audioCtx.createBuffer(2,sec*sr,sr);
+  for(var ch=0;ch<2;ch++){var d=buf.getChannelData(ch);for(var s=0;s<d.length;s++)d[s]=(Math.random()*2-1)*Math.pow(1-s/d.length,2.2);}
+  var rev=audioCtx.createConvolver();rev.buffer=buf;rev.connect(masterGain);
+  var filt=audioCtx.createBiquadFilter();filt.type='lowpass';filt.frequency.value=220;filt.Q.value=3;
   filt.connect(rev);filt.connect(masterGain);
-  var lfo=audioCtx.createOscillator();
-  var lfoG=audioCtx.createGain();lfo.frequency.value=0.07;lfoG.gain.value=18;
+  var lfo=audioCtx.createOscillator(),lfoG=audioCtx.createGain();lfo.frequency.value=0.08;lfoG.gain.value=15;
   lfo.connect(lfoG);lfoG.connect(filt.frequency);lfo.start();
-  [{f:55,v:.18},{f:82.4,v:.13},{f:110,v:.09},{f:130.8,v:.07},{f:164.8,v:.04}].forEach(function(o,i){
-    var os=audioCtx.createOscillator();
-    os.type=['sawtooth','triangle','sawtooth','sine','triangle'][i];
-    os.frequency.value=o.f;
+  [{f:55,v:.15},{f:82.4,v:.1},{f:110,v:.07},{f:164.8,v:.04}].forEach(function(o,i){
+    var os=audioCtx.createOscillator();os.type=['sawtooth','triangle','sawtooth','sine'][i];os.frequency.value=o.f;
     var g=audioCtx.createGain();g.gain.value=o.v;
-    var od=audioCtx.createOscillator();od.type='sawtooth';od.frequency.value=o.f*1.003;
-    var gd=audioCtx.createGain();gd.gain.value=o.v*.4;
-    os.connect(g);g.connect(filt);od.connect(gd);gd.connect(filt);
-    os.start();od.start();
+    os.connect(g);g.connect(filt);os.start();
   });
 }
 function toggleAudio(){
   var btn=document.getElementById('audioBtn');
-  if(!audioCtx) buildAudio();
-  audioCtx.resume();
-  audioOn=!audioOn;
+  if(!audioCtx)buildAudio();audioCtx.resume();audioOn=!audioOn;
   masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-  masterGain.gain.linearRampToValueAtTime(audioOn?.09:0,audioCtx.currentTime+1.5);
-  btn.classList.toggle('on',audioOn);
-  btn.innerHTML=audioOn?'&#9834; ON':'&#9834; AMBIENT';
+  masterGain.gain.linearRampToValueAtTime(audioOn?.08:0,audioCtx.currentTime+1.5);
+  btn.classList.toggle('on',audioOn);btn.innerHTML=audioOn?'♩ ON':'♩ AMB';
 }
 
-// ======================================================
-// UI STATE
-// ======================================================
-var foundCount=0, doneCount=0, startTime=0, timerInt=null, chatHist=[];
-var TOTAL_MODS=15, allResults={}, doneModIds={};
+// ═══════════════════════════════════════════════════════
+// AUTH SYSTEM
+// ═══════════════════════════════════════════════════════
+var currentUser=null;
+
+async function loadMe(){
+  try{
+    var r=await fetch('/auth/me');var d=await r.json();
+    if(d.logged_in){
+      currentUser=d;
+      document.getElementById('authBtn').style.display='none';
+      document.getElementById('profileBtn').style.display='';
+      document.getElementById('profileBtn').textContent='👤 '+d.username;
+      updateProfilePanel(d);
+      loadRavenDBList();
+    }
+  }catch(e){}
+}
+
+function showAuth(){document.getElementById('auth-modal').classList.add('show');}
+function closeAuth(){document.getElementById('auth-modal').classList.remove('show');}
+function swAuth(t){
+  document.getElementById('at-login').classList.toggle('active',t==='login');
+  document.getElementById('at-reg').classList.toggle('active',t==='reg');
+  document.getElementById('af-login').style.display=t==='login'?'':'none';
+  document.getElementById('af-reg').style.display=t==='reg'?'':'none';
+  document.getElementById('auth-err').textContent='';
+}
+
+async function doLogin(){
+  document.getElementById('auth-err').textContent='';
+  var login=document.getElementById('l-login').value.trim();
+  var pass=document.getElementById('l-pass').value;
+  if(!login||!pass){document.getElementById('auth-err').textContent='Заполни все поля';return;}
+  try{
+    var r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify({login,password:pass})});
+    var d=await r.json();
+    if(d.ok){closeAuth();currentUser=d;document.getElementById('authBtn').style.display='none';
+      document.getElementById('profileBtn').style.display='';
+      document.getElementById('profileBtn').textContent='👤 '+d.username;
+      await loadMe();addLog('done','auth','Авторизован: '+d.username);}
+    else document.getElementById('auth-err').textContent=d.error||'Ошибка';
+  }catch(e){document.getElementById('auth-err').textContent='Сетевая ошибка';}
+}
+
+async function doRegister(){
+  document.getElementById('auth-err').textContent='';
+  var user=document.getElementById('r-user').value.trim();
+  var email=document.getElementById('r-email').value.trim();
+  var pass=document.getElementById('r-pass').value;
+  if(!user||!email||!pass){document.getElementById('auth-err').textContent='Заполни все поля';return;}
+  try{
+    var r=await fetch('/auth/register',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify({username:user,email,password:pass})});
+    var d=await r.json();
+    if(d.ok){closeAuth();addLog('done','auth','Зарегистрирован: '+user);await loadMe();}
+    else document.getElementById('auth-err').textContent=d.error||'Ошибка';
+  }catch(e){document.getElementById('auth-err').textContent='Сетевая ошибка';}
+}
+
+async function doLogout(){
+  await fetch('/auth/logout',{method:'POST',headers:{'X-CSRF-Token':CSRF}});
+  currentUser=null;document.getElementById('authBtn').style.display='';
+  document.getElementById('profileBtn').style.display='none';
+  document.getElementById('profile-panel').classList.remove('open');
+  document.getElementById('rdb-list').innerHTML='<div class="rdb-empty" id="rdb-empty">Войдите для управления базами.</div>';
+  addLog('info','auth','Выполнен выход');
+}
+
+function toggleProfile(){document.getElementById('profile-panel').classList.toggle('open');}
+
+function updateProfilePanel(d){
+  document.getElementById('pp-uname').textContent=d.username;
+  document.getElementById('pp-rank').textContent=d.rank||'ANALYST';
+  document.getElementById('pp-bio').textContent=d.bio||'';
+  document.getElementById('pp-apikey').textContent=d.api_key||'—';
+  if(d.avatar){
+    document.getElementById('pp-avatar').src=d.avatar;
+    document.getElementById('pp-avatar').style.display='';
+  }
+  if(d.banner){
+    document.getElementById('pp-banner').style.backgroundImage='url('+d.banner+')';
+  }
+  document.getElementById('pp-bio-inp').value=d.bio||'';
+  document.getElementById('pp-avatar-inp').value=d.avatar||'';
+  document.getElementById('pp-banner-inp').value=d.banner||'';
+}
+
+async function saveProfile(){
+  var bio=document.getElementById('pp-bio-inp').value;
+  var avatar=document.getElementById('pp-avatar-inp').value;
+  var banner=document.getElementById('pp-banner-inp').value;
+  var newpass=document.getElementById('pp-newpass').value;
+  var curpass=document.getElementById('pp-curpass').value;
+  var payload={bio,avatar_url:avatar,banner_url:banner};
+  if(newpass){payload.new_password=newpass;payload.current_password=curpass;}
+  try{
+    var r=await fetch('/auth/update',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify(payload)});
+    var d=await r.json();
+    if(d.ok){addLog('done','profile','Профиль обновлён');await loadMe();}
+    else addLog('error','profile',d.error||'Ошибка');
+  }catch(e){addLog('error','profile','Сетевая ошибка');}
+}
+
+// ═══════════════════════════════════════════════════════
+// RAVENDB
+// ═══════════════════════════════════════════════════════
+var localRDB=[];
+
+async function loadRavenDBList(){
+  if(!currentUser){renderRDB();return;}
+  try{
+    var r=await fetch('/api/ravendb',{headers:{'X-CSRF-Token':CSRF}});
+    localRDB=await r.json();renderRDB();
+  }catch(e){}
+}
+
+function renderRDB(){
+  var list=document.getElementById('rdb-list');
+  if(!localRDB.length){
+    list.innerHTML='<div class="rdb-empty" id="rdb-empty">Баз не добавлено.<br><span style="font-size:.57rem">Добавьте URL для автопроверки при расследовании.</span></div>';return;
+  }
+  list.innerHTML='';
+  var typeColors={breach:'#ff00cc',tor:'#660033',paste:'#886633',leak:'#ff8800',other:'#3399ff'};
+  localRDB.forEach(function(d){
+    var div=document.createElement('div');div.className='rdb-item';
+    div.innerHTML='<div class="rdb-info">'+
+      '<div class="rdb-name">'+esc(d.name)+'</div>'+
+      '<div class="rdb-url">'+esc(d.url)+'</div>'+
+      '<div style="display:flex;gap:.5rem;margin-top:.12rem">'+
+      '<span class="rdb-type" style="color:'+(typeColors[d.db_type]||'#3399ff')+'">'+d.db_type+'</span>'+
+      '<span class="rdb-hits">★ '+d.hits+' hits</span>'+
+      '<span style="font-size:.52rem;color:var(--textd)">'+(d.enabled?'✓ активна':'✗ выкл')+'</span></div>'+
+      '</div>'+
+      '<div class="rdb-btns">'+
+      '<button class="rdb-btn '+(d.enabled?'on':'off')+'" onclick="toggleRDB('+d.id+')">'+(d.enabled?'ON':'OFF')+'</button>'+
+      '<button class="rdb-btn del" onclick="deleteRDB('+d.id+')">✕</button>'+
+      '</div>';
+    list.appendChild(div);
+  });
+}
+
+async function addRavenDB(){
+  var name=document.getElementById('rdb-name').value.trim();
+  var url=document.getElementById('rdb-url').value.trim();
+  var desc=document.getElementById('rdb-desc').value.trim();
+  var db_type=document.getElementById('rdb-type').value;
+  var kw=document.getElementById('rdb-kw').value.trim();
+  var msg=document.getElementById('rdb-msg');
+  if(!name||!url){msg.textContent='Название и URL обязательны';msg.style.color='var(--red)';return;}
+  if(!currentUser){
+    // guest mode — store locally
+    var entry={id:Date.now(),name,url,description:desc,db_type,keywords:kw,enabled:true,hits:0,added_at:new Date().toISOString()};
+    localRDB.push(entry);renderRDB();
+    msg.textContent='Добавлено локально (войдите для сохранения)';msg.style.color='var(--ora)';
+    document.getElementById('rdb-name').value='';document.getElementById('rdb-url').value='';
+    return;
+  }
+  try{
+    var r=await fetch('/api/ravendb',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},
+      body:JSON.stringify({name,url,description:desc,db_type,keywords:kw})});
+    var d=await r.json();
+    if(d.ok){
+      msg.textContent='База добавлена!';msg.style.color='var(--grn)';
+      document.getElementById('rdb-name').value='';document.getElementById('rdb-url').value='';
+      document.getElementById('rdb-desc').value='';document.getElementById('rdb-kw').value='';
+      await loadRavenDBList();
+    }else{msg.textContent=d.error||'Ошибка';msg.style.color='var(--red)';}
+  }catch(e){msg.textContent='Сетевая ошибка';msg.style.color='var(--red)';}
+}
+
+async function deleteRDB(id){
+  if(!currentUser){localRDB=localRDB.filter(function(d){return d.id!==id;});renderRDB();return;}
+  try{
+    await fetch('/api/ravendb/'+id,{method:'DELETE',headers:{'X-CSRF-Token':CSRF}});
+    await loadRavenDBList();
+  }catch(e){}
+}
+
+async function toggleRDB(id){
+  if(!currentUser){localRDB.forEach(function(d){if(d.id===id)d.enabled=!d.enabled;});renderRDB();return;}
+  try{await fetch('/api/ravendb/'+id+'/toggle',{method:'POST',headers:{'X-CSRF-Token':CSRF}});await loadRavenDBList();}catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════
+var foundCount=0,doneCount=0,startTime=0,timerInt=null,chatHist=[];
+var TOTAL_MODS=16,allResults={},doneModIds={};
+var MOD_COL={sherlock:'#00f5ff',maigret:'#00ccdd',holehe:'#ff00cc',phone:'#ff8800',
+  hibp:'#ff00cc',social:'#aa44ff',github:'#aa44ff',telegram:'#3399ff',
+  whois:'#3399ff',ip:'#3399ff',dorks:'#ff8800',paste:'#886633',
+  darkweb:'#660033',intelx:'#ff8800',ravendb:'#ff2244',ai:'#00ff88',dns:'#3399ff'};
 
 function setMod(id,state){
-  if(!NS[id]) return;
-  NS[id].state=state;
+  if(!NS[id])return;NS[id].state=state;
   var el=document.querySelector('[data-mod="'+id+'"]');
-  if(el) el.className='mod '+state;
+  if(el)el.className='mod '+state;
   if(activeNode===id){var n=NODES.find(function(x){return x.id===id;});if(n)showNP(n);}
 }
-
-function ts(){
-  var d=new Date();
-  return('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2);
-}
+function ts(){var d=new Date();return('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2);}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-// Module color map
-var MOD_COL={sherlock:'#dd4466',maigret:'#dd4466',holehe:'#cc3388',phone:'#cc8822',
-  hibp:'#cc3388',social:'#7733cc',github:'#7733cc',telegram:'#3377cc',
-  whois:'#3377cc',ip:'#3377cc',dorks:'#cc5533',paste:'#886633',
-  darkweb:'#661133',intelx:'#cc5533',ai:'#44bb77',dns:'#3377cc'};
-
 function addLog(type,mod,text){
   var el=document.getElementById('log-out');
   var d=document.createElement('div');d.className='ll '+type;
   var mcol=MOD_COL[mod]||'var(--textd)';
-  var modTag=mod?'<span class="lmod" style="background:'+mcol+'22;color:'+mcol+'">'+mod.toUpperCase()+'</span>':'';
+  var modTag=mod?'<span class="lmod" style="background:'+mcol+'18;color:'+mcol+'">'+mod.toUpperCase()+'</span>':'';
   d.innerHTML='<span class="lts">['+ts()+']</span>'+modTag+esc(text);
   el.appendChild(d);
-  if(el.scrollTop>el.scrollHeight-el.clientHeight-80) el.scrollTop=el.scrollHeight;
+  if(el.scrollTop>el.scrollHeight-el.clientHeight-80)el.scrollTop=el.scrollHeight;
 }
-
 function addResult(mod,text){
-  if(!allResults[mod]) allResults[mod]=[];
-  allResults[mod].push(text);
-  if(!modResults[mod]) modResults[mod]=[];
-  modResults[mod].push(text);
-  var secId='rs-'+mod;
-  var sec=document.getElementById(secId);
+  if(!allResults[mod])allResults[mod]=[];allResults[mod].push(text);
+  if(!modResults[mod])modResults[mod]=[];modResults[mod].push(text);
+  var secId='rs-'+mod,sec=document.getElementById(secId);
   if(!sec){
     var rc=document.getElementById('res-content');
-    if(rc.firstChild&&rc.firstChild.style&&rc.firstChild.style.fontSize==='.68rem') rc.innerHTML='';
+    if(rc.children.length===1&&rc.firstChild.style&&rc.firstChild.style.fontSize)rc.innerHTML='';
     var n=NODES.find(function(x){return x.id===mod;});
-    var col=MOD_COL[mod]||'var(--red)';
+    var col=MOD_COL[mod]||'var(--cyan)';
     var wrap=document.createElement('div');wrap.className='rsec';
-    wrap.innerHTML='<div class="rsec-h" style="color:'+col+'">'+NODE_ICONS[mod]+' '+(n?n.label:mod.toUpperCase())+'</div>';
-    sec=document.createElement('div');sec.id=secId;
-    wrap.appendChild(sec);rc.appendChild(wrap);
+    wrap.innerHTML='<div class="rsec-h" style="color:'+col+'">'+NODE_ICONS[mod]+' '+(n?n.label:mod.toUpperCase())+' <span class="rsec-cnt" id="rc-'+mod+'">1</span></div>';
+    sec=document.createElement('div');sec.id=secId;wrap.appendChild(sec);rc.appendChild(wrap);
+  }else{
+    var cnt=document.getElementById('rc-'+mod);if(cnt)cnt.textContent=allResults[mod].length;
   }
   var item=document.createElement('div');
-  var isStar=text.indexOf('★')!==-1||text.indexOf('UTECHKA')!==-1||text.indexOf('DOXBIN')!==-1;
+  var isStar=text.indexOf('★')!==-1||text.indexOf('DOXBIN')!==-1||text.indexOf('УТЕЧКА')!==-1;
   item.className='ritem hi'+(isStar?' star':'');
-  item.textContent=text;sec.appendChild(item);
+  // make URLs clickable
+  if(text.startsWith('http')){
+    var a=document.createElement('a');a.href=text;a.target='_blank';a.rel='noopener noreferrer';a.textContent=text;
+    item.appendChild(a);
+  }else{item.textContent=text;}
+  sec.appendChild(item);
 }
 
 function swTab(t){
-  var ns=['log','res','chat'];
+  var ns=['log','res','rdb','chat'];
   document.querySelectorAll('.tab').forEach(function(el,i){el.classList.toggle('active',ns[i]===t);});
   ns.forEach(function(n){document.getElementById('panel-'+n).classList.toggle('show',n===t);});
 }
 
-// ======================================================
+// ═══════════════════════════════════════════════════════
 // INVESTIGATION
-// ======================================================
+// ═══════════════════════════════════════════════════════
 async function startInv(){
   var name=document.getElementById('i-name').value.trim();
   var user=document.getElementById('i-user').value.trim();
@@ -795,44 +1260,38 @@ async function startInv(){
   var email=document.getElementById('i-email').value.trim();
   var domain=document.getElementById('i-domain').value.trim();
   if(!name&&!user&&!phone&&!email&&!domain){addLog('error','','Введите хотя бы одно поле!');return;}
-
   clearAll();
   var target=[name,user,phone,email,domain].filter(Boolean).join(' / ');
   document.getElementById('target-display').textContent=target.toUpperCase().substring(0,44);
-  document.getElementById('target-sub').textContent='[ACTIVE SCAN] '+TOTAL_MODS+' MODULES';
+  document.getElementById('target-sub').textContent='[ACTIVE SCAN] · '+TOTAL_MODS+' MODULES';
   document.getElementById('runBtn').disabled=true;
   document.getElementById('runBtn').classList.add('scanning');
   document.getElementById('runBtn').textContent='СКАНИРОВАНИЕ...';
-  setMod('target','found'); NS['target'].state='found';
+  setMod('target','found');
   startTime=Date.now();
   timerInt=setInterval(function(){document.getElementById('s-time').textContent=Math.round((Date.now()-startTime)/1000)+'s';},500);
   swTab('log');
-
-  var resp=await fetch('/investigate',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,user,phone,email,domain})
-  });
+  var resp=await fetch('/investigate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,user,phone,email,domain})});
   var reader=resp.body.getReader(),dec=new TextDecoder(),buf='';
   while(true){
-    var rd=await reader.read();if(rd.done) break;
+    var rd=await reader.read();if(rd.done)break;
     buf+=dec.decode(rd.value,{stream:true});
     var lines=buf.split('\n');buf=lines.pop();
     for(var i=0;i<lines.length;i++){
-      if(!lines[i].startsWith('data: ')) continue;
-      var raw=lines[i].slice(6);if(raw==='[DONE]') continue;
+      if(!lines[i].startsWith('data: '))continue;
+      var raw=lines[i].slice(6);if(raw==='[DONE]')continue;
       try{handleEv(JSON.parse(raw));}catch(e){}
     }
   }
   clearInterval(timerInt);
   var elapsed=Math.round((Date.now()-startTime)/1000);
-  document.getElementById('target-sub').textContent='ЗАВЕРШЕНО за '+elapsed+'s | '+foundCount+' записей';
+  document.getElementById('target-sub').textContent='ЗАВЕРШЕНО · '+elapsed+'s · '+foundCount+' записей';
   document.getElementById('runBtn').disabled=false;
   document.getElementById('runBtn').classList.remove('scanning');
-  document.getElementById('runBtn').textContent='> НОВОЕ РАССЛЕДОВАНИЕ';
+  document.getElementById('runBtn').textContent='► НОВОЕ РАССЛЕДОВАНИЕ';
   var sc=foundCount>30?'КРИТИЧЕСКИЙ':foundCount>12?'ВЫСОКИЙ':foundCount>4?'СРЕДНИЙ':'НИЗКИЙ';
-  var el=document.getElementById('s-score');
-  el.textContent=sc;
-  el.style.color=foundCount>30?'var(--red2)':foundCount>12?'var(--warn)':foundCount>4?'var(--amb)':'var(--info)';
+  var el=document.getElementById('s-score');el.textContent=sc;
+  el.style.color=foundCount>30?'var(--red)':foundCount>12?'var(--ora)':foundCount>4?'var(--yel)':'var(--grn)';
   addLog('done','','Расследование завершено: '+foundCount+' записей за '+elapsed+'s');
   swTab('res');
 }
@@ -844,7 +1303,7 @@ function handleEv(ev){
   if(type==='done'){
     if(!doneModIds[dispMod]){
       doneModIds[dispMod]=true;
-      if(NS[dispMod].state!=='error') setMod(dispMod,'found');
+      if(NS[dispMod]&&NS[dispMod].state!=='error')setMod(dispMod,'found');
       doneCount++;
       document.getElementById('s-mods').textContent=doneCount+'/'+TOTAL_MODS;
       document.getElementById('prog-fill').style.width=(doneCount/TOTAL_MODS*100)+'%';
@@ -854,111 +1313,111 @@ function handleEv(ev){
   if(type==='error'){setMod(dispMod,'error');addLog('error',dispMod,text);return;}
   if(type==='info'){addLog('info',dispMod,text);return;}
   if(type==='found'){
-    foundCount++;
-    document.getElementById('s-found').textContent=foundCount;
-    addLog('found',dispMod,text);
-    addResult(dispMod,text);return;
+    foundCount++;document.getElementById('s-found').textContent=foundCount;
+    addLog('found',dispMod,text);addResult(dispMod,text);return;
   }
   if(type==='stream'){
     var box=document.getElementById('ai-stream-box');
     if(!box){
       var rc=document.getElementById('res-content');
-      var n=NODES.find(function(x){return x.id==='ai';});
       var wrap=document.createElement('div');wrap.className='rsec';
-      wrap.innerHTML='<div class="rsec-h" style="color:#44bb77">[AI] RAVENS AI — АНАЛИЗ</div>';
+      wrap.innerHTML='<div class="rsec-h" style="color:#00ff88">[AI] RAVENS AI — ДОСЬЕ</div>';
       box=document.createElement('div');box.id='ai-stream-box';
       wrap.appendChild(box);rc.appendChild(wrap);swTab('res');
     }
     box.textContent+=text;box.scrollIntoView({block:'end',behavior:'smooth'});
-    if(!allResults['ai']) allResults['ai']=[];
-    if(!allResults['ai'].length) allResults['ai'].push('');
+    if(!allResults['ai'])allResults['ai']=[];
+    if(!allResults['ai'].length)allResults['ai'].push('');
     allResults['ai'][allResults['ai'].length-1]+=text;
   }
 }
 
-// ======================================================
-// REPORT — new tab, full styled HTML
-// ======================================================
+// ═══════════════════════════════════════════════════════
+// REPORT
+// ═══════════════════════════════════════════════════════
 function openReport(){
   var target=document.getElementById('target-display').textContent;
   var elapsed=document.getElementById('s-time').textContent;
   var score=document.getElementById('s-score').textContent;
+  var scoreCol=foundCount>30?'#ff2244':foundCount>12?'#ff8800':foundCount>4?'#ffee00':'#00ff88';
   var modDefs=[
-    {id:'sherlock',label:'SHERLOCK',col:'#dd4466',desc:'Поиск username на 400+ платформах'},
-    {id:'maigret', label:'MAIGRET', col:'#dd4466',desc:'Глубокий анализ профилей'},
-    {id:'holehe',  label:'HOLEHE',  col:'#cc3388',desc:'Email регистрации на 120+ сервисах'},
-    {id:'phone',   label:'PHONE',   col:'#cc8822',desc:'Анализ телефона'},
-    {id:'hibp',    label:'HIBP',    col:'#cc3388',desc:'Have I Been Pwned — утечки'},
-    {id:'social',  label:'SOCIAL',  col:'#7733cc',desc:'Социальные платформы'},
-    {id:'github',  label:'GITHUB',  col:'#7733cc',desc:'GitHub OSINT'},
-    {id:'telegram',label:'TELEGRAM',col:'#3377cc',desc:'Telegram'},
-    {id:'whois',   label:'WHOIS',   col:'#3377cc',desc:'WHOIS + DNS'},
-    {id:'ip',      label:'IP GEO',  col:'#3377cc',desc:'IP геолокация'},
-    {id:'dorks',   label:'DORKS',   col:'#cc5533',desc:'Google Dorks'},
-    {id:'paste',   label:'PASTE',   col:'#886633',desc:'Paste & Doxbin'},
-    {id:'darkweb', label:'DARKWEB', col:'#661133',desc:'Dark Web'},
-    {id:'intelx',  label:'INTELX',  col:'#cc5533',desc:'IntelX + Breach DBs'},
-    {id:'ai',      label:'RAVENS AI',col:'#44bb77',desc:'NVIDIA NIM Nemotron-Ultra анализ'},
+    {id:'sherlock',label:'SHERLOCK',col:'#00f5ff',desc:'Username на 400+ платформах'},
+    {id:'maigret',label:'MAIGRET',col:'#00ccdd',desc:'Глубокий анализ профилей'},
+    {id:'holehe',label:'HOLEHE',col:'#ff00cc',desc:'Email → 120+ сервисов'},
+    {id:'phone',label:'PHONE',col:'#ff8800',desc:'Анализ телефона'},
+    {id:'hibp',label:'HIBP',col:'#ff00cc',desc:'Have I Been Pwned'},
+    {id:'social',label:'SOCIAL',col:'#aa44ff',desc:'Социальные платформы'},
+    {id:'github',label:'GITHUB',col:'#aa44ff',desc:'GitHub OSINT'},
+    {id:'telegram',label:'TELEGRAM',col:'#3399ff',desc:'Telegram'},
+    {id:'whois',label:'WHOIS/DNS',col:'#3399ff',desc:'WHOIS + DNS записи'},
+    {id:'ip',label:'IP GEO',col:'#3399ff',desc:'IP геолокация'},
+    {id:'dorks',label:'DORKS',col:'#ff8800',desc:'Google Dorks'},
+    {id:'paste',label:'PASTE/DOX',col:'#886633',desc:'Paste & Doxbin'},
+    {id:'darkweb',label:'DARK WEB',col:'#660033',desc:'Dark Web / Ahmia'},
+    {id:'intelx',label:'INTELX',col:'#ff8800',desc:'IntelX + Breach DBs'},
+    {id:'ravendb',label:'RAVENDB',col:'#ff2244',desc:'Пользовательские базы'},
+    {id:'ai',label:'RAVENS AI',col:'#00ff88',desc:'Nemotron-Ultra FSB анализ'},
   ];
   var secs='';
   modDefs.forEach(function(m){
-    var items=allResults[m.id]||[];
-    if(!items.length) return;
+    var items=allResults[m.id]||[];if(!items.length)return;
     var isAI=m.id==='ai';
     var rows=items.map(function(it){
-      if(isAI) return '<div class="ai-txt">'+esc(it)+'</div>';
-      var isStar=it.indexOf('DOXBIN')!==-1||it.indexOf('BREACH')!==-1||it.indexOf('УТЕЧКА')!==-1;
-      return '<div class="row'+(isStar?' hi':'')+'">'+esc(it)+'</div>';
+      if(isAI)return '<div class="ai-txt">'+esc2(it)+'</div>';
+      var isStar=it.indexOf('★')!==-1||it.indexOf('DOXBIN')!==-1||it.indexOf('УТЕЧКА')!==-1;
+      var isUrl=it.startsWith('http');
+      return '<div class="row'+(isStar?' hi':'')+'">'+
+        (isUrl?'<a href="'+esc2(it)+'" target="_blank" rel="noopener" style="color:#00f5ff">'+esc2(it)+'</a>':esc2(it))+
+        '</div>';
     }).join('');
-    secs+='<section><div class="sec-h" style="border-color:'+m.col+';color:'+m.col+'">'+m.label+' <span class="sec-desc">'+m.desc+'</span></div>'+
-      '<div class="cnt">'+items.length+' записей</div>'+rows+'</section>';
+    secs+='<section><div class="sec-h" style="border-color:'+m.col+';color:'+m.col+'">'+m.label+
+      ' <span class="sec-desc">'+m.desc+'</span><span class="sec-cnt">'+items.length+' записей</span></div>'+rows+'</section>';
   });
-  if(!secs) secs='<section><p style="color:#6a3038">Нет данных. Запустите расследование.</p></section>';
-  var scoreCol=foundCount>30?'#ff2244':foundCount>12?'#ff8833':foundCount>4?'#cc8822':'#44bb77';
-
-  var html='<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">'+
-    '<title>Ravens Report</title>'+
+  if(!secs)secs='<section><p style="color:#3a5070">Нет данных. Запустите расследование.</p></section>';
+  function esc2(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  var html='<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Ravens OSINT Report</title>'+
     '<style>*{box-sizing:border-box;margin:0;padding:0}'+
-    'body{background:#050002;color:#ddb8bc;font-family:"Courier New",monospace;padding:1.5rem 2rem}'+
+    'body{background:#060810;color:#c8e0f0;font-family:"Courier New",monospace;padding:1.2rem 1.5rem}'+
     'body::before{content:"";position:fixed;inset:0;pointer-events:none;'+
-      'background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(180,30,50,.01) 2px,rgba(180,30,50,.01) 4px)}'+
-    '.header{border:1px solid #3d0d10;border-radius:8px;padding:1.2rem 1.8rem;margin-bottom:1.5rem;background:#0b0104}'+
-    '.logo{font-size:1.5rem;font-weight:900;color:#ff2244;letter-spacing:.2em;'+
-      'text-shadow:0 0 18px rgba(255,34,68,.4);margin-bottom:.5rem}'+
-    '.meta{display:flex;gap:2rem;flex-wrap:wrap;margin-top:.6rem}'+
-    '.f .k{font-size:.6rem;color:#6a3038;text-transform:uppercase;letter-spacing:.1em}'+
-    '.f .v{font-size:.88rem;font-weight:700;color:#ff4466}'+
-    'section{background:#0b0104;border:1px solid #260607;border-radius:6px;padding:1rem 1.3rem;margin-bottom:1rem}'+
-    '.sec-h{font-size:.82rem;font-weight:900;text-transform:uppercase;letter-spacing:.14em;'+
-      'padding-bottom:.4rem;margin-bottom:.4rem;border-bottom:2px solid;padding-left:.4rem;border-left:3px solid}'+
-    '.sec-desc{font-size:.62rem;font-weight:400;letter-spacing:.05em;opacity:.55}'+
-    '.cnt{font-size:.6rem;color:#6a3038;margin-bottom:.5rem}'+
-    '.row{background:#120206;border:1px solid #260607;border-radius:3px;'+
-      'padding:.25rem .5rem;font-size:.7rem;color:#ddb8bc;margin-bottom:.14rem;word-break:break-all}'+
-    '.row.hi{border-color:rgba(204,34,51,.4);color:#ff5566}'+
-    '.row.hi::before{content:"★ ";color:#ffcc44}'+
-    '.ai-txt{font-size:.75rem;line-height:1.9;color:#ddb8bc;white-space:pre-wrap;'+
-      'padding:.6rem .8rem;background:#0c0103;border:1px solid #3d0d10;border-radius:5px}'+
-    '.footer{text-align:center;color:#3d0d10;font-size:.62rem;margin-top:1.5rem;letter-spacing:.1em}'+
+      'background-image:linear-gradient(rgba(0,245,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,245,255,.05) 1px,transparent 1px);'+
+      'background-size:40px 40px}'+
+    '.header{border:1px solid #263045;border-radius:6px;padding:1rem 1.4rem;margin-bottom:1.2rem;background:#080c14;position:relative}'+
+    '.logo{font-size:1.3rem;font-weight:900;color:#00f5ff;letter-spacing:.22em;text-shadow:0 0 16px rgba(0,245,255,.4);margin-bottom:.4rem}'+
+    '.meta{display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:.5rem}'+
+    '.f .k{font-size:.57rem;color:#3a5070;text-transform:uppercase;letter-spacing:.1em}'+
+    '.f .v{font-size:.85rem;font-weight:700;color:#00f5ff}'+
+    'section{background:#080c14;border:1px solid #1a2235;border-radius:5px;padding:.85rem 1.1rem;margin-bottom:.9rem;position:relative}'+
+    '.sec-h{font-size:.78rem;font-weight:900;text-transform:uppercase;letter-spacing:.14em;'+
+      'padding:.35rem .4rem;margin-bottom:.35rem;border-left:3px solid;border-bottom:1px solid rgba(255,255,255,.04);'+
+      'display:flex;align-items:center;gap:.6rem}'+
+    '.sec-desc{font-size:.58rem;font-weight:400;letter-spacing:.05em;opacity:.45;flex:1}'+
+    '.sec-cnt{font-size:.58rem;color:#3a5070}'+
+    '.row{background:#0c1118;border:1px solid #1a2235;border-radius:3px;'+
+      'padding:.22rem .45rem;font-size:.68rem;color:#c8e0f0;margin-bottom:.1rem;word-break:break-all}'+
+    '.row.hi{border-color:rgba(0,245,255,.2);color:#00f5ff}'+
+    '.row.hi::before{content:"★ ";color:#ffee00}'+
+    '.ai-txt{font-size:.72rem;line-height:1.95;color:#c8e0f0;white-space:pre-wrap;'+
+      'padding:.5rem .7rem;background:#0c1118;border:1px solid #1a2235;border-radius:4px}'+
+    '.footer{text-align:center;color:#1a2235;font-size:.6rem;margin-top:1.2rem;letter-spacing:.1em}'+
+    'a{color:#00f5ff;text-decoration:none}a:hover{text-decoration:underline}'+
     '</style></head><body>'+
     '<div class="header">'+
-      '<div class="logo">&#x2B21; RAVENS NEXUS — OSINT REPORT</div>'+
+      '<div class="logo">⬡ RAVENS NEXUS — OSINT REPORT</div>'+
       '<div class="meta">'+
-        '<div class="f"><div class="k">Цель</div><div class="v">'+esc(target)+'</div></div>'+
-        '<div class="f"><div class="k">Найдено</div><div class="v">'+foundCount+' записей</div></div>'+
+        '<div class="f"><div class="k">Цель</div><div class="v">'+esc2(target)+'</div></div>'+
+        '<div class="f"><div class="k">Найдено</div><div class="v">'+foundCount+'</div></div>'+
         '<div class="f"><div class="k">Время</div><div class="v">'+elapsed+'</div></div>'+
-        '<div class="f"><div class="k">Уровень</div><div class="v" style="color:'+scoreCol+'">'+esc(score)+'</div></div>'+
+        '<div class="f"><div class="k">Уровень</div><div class="v" style="color:'+scoreCol+'">'+esc2(score)+'</div></div>'+
         '<div class="f"><div class="k">Дата</div><div class="v">'+new Date().toLocaleString('ru-RU')+'</div></div>'+
-      '</div>'+
-    '</div>'+
+      '</div></div>'+
     secs+
-    '<div class="footer">RAVENS // NVIDIA NIM NEXUS // NEMOTRON-ULTRA-550B // FSB-LEVEL OSINT // ONLY PUBLIC DATA</div>'+
+    '<div class="footer">RAVENS NEXUS // NIM NEMOTRON-ULTRA-550B // FSB-LEVEL OSINT // ONLY PUBLIC DATA // '+new Date().toISOString()+'</div>'+
     '</body></html>';
   var w=window.open('','_blank');w.document.write(html);w.document.close();
 }
 
 function clearRes(){
-  document.getElementById('res-content').innerHTML='<div style="color:var(--textd);font-size:.68rem;padding:.3rem">Запустите расследование...</div>';
+  document.getElementById('res-content').innerHTML='<div style="color:var(--textd);font-size:.66rem;padding:.3rem">Запустите расследование...</div>';
   allResults={};modResults={};NODES.forEach(function(n){modResults[n.id]=[];});
 }
 
@@ -966,53 +1425,47 @@ function clearAll(){
   foundCount=0;doneCount=0;doneModIds={};allResults={};modResults={};
   NODES.forEach(function(n){NS[n.id]={state:'idle'};modResults[n.id]=[];});
   document.getElementById('log-out').innerHTML='<div class="ll info"><span class="lts">[RST]</span>Сброс.</div>';
-  document.getElementById('res-content').innerHTML='<div style="color:var(--textd);font-size:.68rem;padding:.3rem">Запустите расследование...</div>';
+  document.getElementById('res-content').innerHTML='<div style="color:var(--textd);font-size:.66rem;padding:.3rem">Запустите расследование...</div>';
   document.getElementById('target-display').textContent='RAVENS NEXUS';
-  document.getElementById('target-sub').textContent='FSB-LEVEL OSINT &bull; 15 MODULES';
+  document.getElementById('target-sub').textContent='FSB-LEVEL OSINT · 16 MODULES';
   document.getElementById('prog-fill').style.width='0';
-  document.getElementById('s-found').textContent='0';
-  document.getElementById('s-mods').textContent='0/15';
-  document.getElementById('s-time').textContent='0s';
-  document.getElementById('s-score').textContent='--';
+  document.getElementById('s-found').textContent='0';document.getElementById('s-mods').textContent='0/16';
+  document.getElementById('s-time').textContent='0s';document.getElementById('s-score').textContent='--';
   document.getElementById('s-score').style.color='var(--textd)';
   clearInterval(timerInt);closeNP();
-  document.getElementById('runBtn').disabled=false;
-  document.getElementById('runBtn').classList.remove('scanning');
-  document.getElementById('runBtn').textContent='> НАЧАТЬ РАССЛЕДОВАНИЕ';
+  document.getElementById('runBtn').disabled=false;document.getElementById('runBtn').classList.remove('scanning');
+  document.getElementById('runBtn').textContent='► НАЧАТЬ РАССЛЕДОВАНИЕ';
   document.querySelectorAll('.mod').forEach(function(m){m.className='mod';});
 }
 
-// ======================================================
+// ═══════════════════════════════════════════════════════
 // AI CHAT
-// ======================================================
-document.getElementById('cinput').addEventListener('keydown',function(e){
-  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}
-});
+// ═══════════════════════════════════════════════════════
+document.getElementById('cinput').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}});
 async function sendChat(){
-  var inp=document.getElementById('cinput');
-  var text=inp.value.trim();if(!text) return;
+  var inp=document.getElementById('cinput');var text=inp.value.trim();if(!text)return;
   inp.value='';
   var msgs=document.getElementById('chat-msgs');
   var ud=document.createElement('div');ud.className='cm user';ud.textContent=text;
   msgs.appendChild(ud);chatHist.push({role:'user',content:text});msgs.scrollTop=msgs.scrollHeight;
-  var ad=document.createElement('div');ad.className='cm assistant';ad.textContent='...';
-  msgs.appendChild(ad);msgs.scrollTop=msgs.scrollHeight;
-  var resp=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({messages:chatHist})});
-  var reader=resp.body.getReader(),dec=new TextDecoder(),buf='',ans='';
-  ad.textContent='';
+  var ad=document.createElement('div');ad.className='cm assistant';ad.textContent='...';msgs.appendChild(ad);msgs.scrollTop=msgs.scrollHeight;
+  var resp=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHist})});
+  var reader=resp.body.getReader(),dec=new TextDecoder(),buf='',ans='';ad.textContent='';
   while(true){
-    var rd=await reader.read();if(rd.done) break;
+    var rd=await reader.read();if(rd.done)break;
     buf+=dec.decode(rd.value,{stream:true});
     var lines=buf.split('\n');buf=lines.pop();
     for(var i=0;i<lines.length;i++){
-      if(!lines[i].startsWith('data: ')) continue;
-      var raw=lines[i].slice(6);if(raw==='[DONE]') break;
+      if(!lines[i].startsWith('data: '))continue;
+      var raw=lines[i].slice(6);if(raw==='[DONE]')break;
       try{var o=JSON.parse(raw);if(o.type==='content'){ans+=o.content;ad.textContent=ans;msgs.scrollTop=msgs.scrollHeight;}}catch(e){}
     }
   }
   chatHist.push({role:'assistant',content:ans});
 }
+
+// init
+loadMe();
 </script>
 </body>
 </html>

@@ -46,18 +46,26 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   background:radial-gradient(ellipse 75% 85% at 50% 50%,transparent 35%,rgba(0,0,0,.55) 100%)}
 .leaflet-container{background:#000!important}
 
-/* Bottom mode switcher — fixed, always same spot */
-#mode-switcher{position:fixed;bottom:34px;left:50%;transform:translateX(-50%);z-index:260;
-  display:flex;gap:.45rem;padding:.2rem;background:rgba(0,0,0,.45);backdrop-filter:blur(10px);
-  border:1px solid rgba(255,255,255,.08);border-radius:6px}
-.mode-btn{padding:.45rem 1.1rem;font-size:.62rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
-  background:rgba(255,255,255,.04);border:1px solid var(--b1);border-radius:4px;color:var(--textd);
-  cursor:pointer;font-family:inherit;transition:all .2s}
-.mode-btn:hover{color:var(--textm);border-color:var(--b2)}
-.mode-btn.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,229,255,.1);
-  box-shadow:0 0 18px rgba(0,229,255,.22),inset 0 0 12px rgba(0,229,255,.06)}
-.mode-btn.osint.active{color:var(--mag);border-color:var(--mag);background:rgba(255,45,85,.08);
-  box-shadow:0 0 18px rgba(255,45,85,.2),inset 0 0 12px rgba(255,45,85,.05)}
+/* Global bottom navigation dock */
+#global-dock{position:fixed;bottom:28px;left:0;right:0;height:38px;z-index:260;
+  display:flex;justify-content:center;align-items:stretch;
+  background:rgba(4,6,12,.88);backdrop-filter:blur(14px);
+  border-top:1px solid rgba(0,229,255,.12);padding:0 .6rem}
+#global-dock-inner{display:flex;gap:3px;max-width:820px;width:100%;align-items:stretch;padding:.25rem 0}
+.gdock-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:.35rem;
+  padding:0 .5rem;font-size:.58rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  background:rgba(255,255,255,.03);border:1px solid var(--b1);border-radius:4px;
+  color:var(--textd);cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
+.gdock-btn:hover{color:var(--textm);border-color:var(--b2);background:rgba(255,255,255,.05)}
+.gdock-btn.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,229,255,.08);
+  box-shadow:0 0 16px rgba(0,229,255,.15),inset 0 0 10px rgba(0,229,255,.04)}
+.gdock-btn.osint.active{color:var(--mag);border-color:var(--mag);background:rgba(255,45,85,.07);
+  box-shadow:0 0 16px rgba(255,45,85,.18),inset 0 0 10px rgba(255,45,85,.04)}
+.gdock-btn.rdb.active{color:var(--ora);border-color:var(--ora);background:rgba(255,149,0,.07);
+  box-shadow:0 0 16px rgba(255,149,0,.15),inset 0 0 10px rgba(255,149,0,.04)}
+.gdock-btn.ai.active{color:var(--grn);border-color:var(--grn);background:rgba(0,255,136,.06);
+  box-shadow:0 0 16px rgba(0,255,136,.12),inset 0 0 10px rgba(0,255,136,.04)}
+.gdock-sep{width:1px;background:var(--b2);margin:.15rem .15rem;flex-shrink:0}
 
 /* Logo */
 #site-logo{width:42px;height:42px;object-fit:contain;flex-shrink:0;
@@ -164,12 +172,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   text-shadow:0 0 18px rgba(0,245,255,.6),0 0 45px rgba(0,200,212,.2)}
 #target-sub{font-size:.55rem;color:var(--textd);letter-spacing:.22em;text-transform:uppercase;margin-top:.1rem}
 
-/* View switcher */
-#view-sw{position:absolute;top:.55rem;right:.55rem;z-index:8;display:flex;gap:.3rem}
-.vsw{background:rgba(6,8,16,.9);border:1px solid var(--b2);color:var(--textd);
-  border-radius:3px;padding:3px 9px;font-size:.6rem;cursor:pointer;
-  font-family:inherit;text-transform:uppercase;letter-spacing:.06em;transition:all .15s}
-.vsw:hover,.vsw.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,245,255,.05)}
+/* View switcher — removed, use global dock */
 
 /* Progress bar */
 #prog-wrap{position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--b1);z-index:10}
@@ -202,10 +205,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 #right{width:330px;flex-shrink:0;background:var(--panel);
   border-left:1px solid var(--b1);display:flex;flex-direction:column;z-index:10;min-height:0}
 #panel-area{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
-#dock-tabs{display:flex;border-top:1px solid var(--b1);flex-shrink:0;height:34px;background:rgba(0,0,0,.9);z-index:20}
-#dock-tabs .tab{flex:1;padding:.38rem .25rem;font-size:.54rem;border-bottom:none;border-top:2px solid transparent;
-  display:flex;align-items:center;justify-content:center}
-#dock-tabs .tab.active{border-top-color:var(--cyan);border-bottom:none;color:var(--cyan);background:rgba(0,229,255,.04)}
+#dock-tabs{display:none;border-top:1px solid var(--b1);flex-shrink:0;height:32px;background:rgba(0,0,0,.85);z-index:20}
+#dock-tabs .tab{flex:1;padding:.32rem .2rem;font-size:.52rem;border-bottom:none;border-top:2px solid transparent;
+  display:flex;align-items:center;justify-content:center;letter-spacing:.1em;font-weight:700}
+#dock-tabs .tab.active{border-top-color:var(--mag);border-bottom:none;color:var(--mag);background:rgba(255,45,85,.04)}
 #tabs{display:none}
 .tab{flex-shrink:0;padding:.42rem .6rem;font-size:.58rem;font-weight:700;color:var(--textd);
   cursor:pointer;text-align:center;letter-spacing:.1em;text-transform:uppercase;
@@ -299,7 +302,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 .rdb-empty{font-size:.65rem;color:var(--textd);text-align:center;padding:.8rem;letter-spacing:.06em}
 
 /* Map left column */
-#map-left-col{position:absolute;top:.55rem;left:.55rem;z-index:50;width:230px;display:flex;flex-direction:column;gap:.35rem;max-height:calc(100% - 70px)}
+#map-left-col{position:absolute;top:.55rem;left:.55rem;z-index:50;width:230px;display:flex;flex-direction:column;gap:.35rem;max-height:calc(100% - 1rem)}
 #map-layers{position:relative;background:rgba(6,8,16,.97);border:1px solid var(--b2);border-radius:4px;width:100%;flex-shrink:0}
 #map-layers.show{display:block}
 .ml-head{padding:.4rem .55rem;border-bottom:1px solid var(--b1);font-size:.65rem;font-weight:700;
@@ -404,28 +407,21 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   color:var(--textd);cursor:pointer;font-size:.85rem;font-family:inherit;z-index:2}
 
 /* ── WORKSPACE MODES ─────────────────────── */
-.workspace{display:none;position:fixed;inset:0;top:48px;bottom:28px}
+.workspace{display:none;position:fixed;inset:0;top:48px;bottom:66px}
 .workspace.active{display:flex}
 #ws-map{flex-direction:row}
 #ws-osint{flex-direction:row}
 #ws-ravendb{flex-direction:column}
 
-/* Right nav (Shadowbroker style) */
+/* Right sidebar — intel monitor only */
 #rnav-map{width:200px;flex-shrink:0;background:rgba(0,0,0,.85);
-  border-left:1px solid var(--b1);display:flex;flex-direction:column;padding:.5rem .4rem;gap:.25rem;z-index:20}
-.rnav-btn{width:100%;text-align:left;padding:.55rem .65rem;background:rgba(255,255,255,.02);
-  border:1px solid var(--b1);border-radius:4px;color:var(--textd);cursor:pointer;
-  font-family:inherit;font-size:.58rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;transition:all .15s}
-.rnav-btn:hover{border-color:var(--b2);color:var(--textm)}
-.rnav-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,.06);
-  box-shadow:0 0 12px rgba(0,229,255,.08)}
-.rnav-btn.mag.active{border-color:var(--mag);color:var(--mag);background:rgba(255,45,85,.06)}
+  border-left:1px solid var(--b1);display:flex;flex-direction:column;padding:.5rem .4rem;gap:.35rem;z-index:20}
 #rnav-search{margin-bottom:.4rem}
 #rnav-search input{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--b1);
   border-radius:4px;color:var(--text);font-size:.65rem;padding:.35rem .5rem;outline:none;font-family:inherit}
 #rnav-search input:focus{border-color:var(--cyan)}
-#threat-monitor{margin-top:auto;background:rgba(0,0,0,.6);border:1px solid var(--cyan3);
-  border-radius:4px;padding:.4rem;font-size:.58rem;max-height:180px;overflow:hidden}
+#threat-monitor{flex:1;background:rgba(0,0,0,.6);border:1px solid var(--cyan3);
+  border-radius:4px;padding:.4rem;font-size:.58rem;min-height:120px;overflow:hidden;display:flex;flex-direction:column}
 #threat-monitor .tm-h{color:var(--cyan);font-weight:900;letter-spacing:.1em;margin-bottom:.3rem;font-size:.55rem}
 #threat-feed{overflow-y:auto;max-height:140px;line-height:1.6}
 #threat-feed .tf-line{color:var(--red);font-size:.55rem}
@@ -610,8 +606,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   </div>
   <div id="rnav-map">
     <div id="rnav-search"><input placeholder="Find aircraft, ports..." id="map-search-inp"></div>
-    <button class="rnav-btn" onclick="swWorkspace('ravendb')">⬡ RAVENBD</button>
-    <button class="rnav-btn" onclick="swWorkspace('osint');swTab('chat')">◇ AI AGENT</button>
     <div id="threat-monitor">
       <div class="tm-h">SYS.STATUS: <span id="tm-status">MONITORING</span></div>
       <div id="threat-feed"></div>
@@ -667,10 +661,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
     <div id="hud">
       <div id="target-display">RAVEN</div>
       <div id="target-sub">OSINT ANALYSIS · 16 MODULES</div>
-    </div>
-    <div id="view-sw">
-      <button class="vsw active" onclick="swView('net')">OSINT NET</button>
-      <button class="vsw" onclick="swWorkspace('map')">◈ INTEL MAP</button>
     </div>
     <div id="prog-wrap"><div id="prog-fill"></div></div>
     <div id="npanel">
@@ -743,7 +733,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
       <div class="tab" onclick="swTab('res')">ДОСЬЕ</div>
       <div class="tab" onclick="swTab('rdb')">RAVENBD</div>
       <div class="tab" onclick="swTab('chat')">AI</div>
-      <div class="tab" onclick="swWorkspace('map')" style="color:var(--mag)">◈ MAP</div>
     </div>
   </div>
 </div>
@@ -768,10 +757,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
       </div>
       <button class="rtbtn" style="margin-top:.3rem;width:100%;padding:.35rem" onclick="addRavenDBFromRBD()">+ ЗАКРЕПИТЬ БАЗУ</button>
       <div id="rbd-db-list" style="margin-top:.5rem"></div>
-      <div style="margin-top:.8rem;display:flex;flex-direction:column;gap:.25rem">
-        <button class="rnav-btn" onclick="swWorkspace('map')">◈ INTEL MAP</button>
-        <button class="rnav-btn" onclick="swWorkspace('osint')">◎ OSINT</button>
-      </div>
     </div>
     <div id="rbd-right">
       <div id="rbd-search-bar">
@@ -791,9 +776,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   <span>SYS: <span id="sb-sys" style="color:var(--grn)">ONLINE</span></span>
 </div>
 
-<div id="mode-switcher">
-  <button class="mode-btn map active" id="mode-map" onclick="swWorkspace('map')">◈ INTEL MAP</button>
-  <button class="mode-btn osint" id="mode-osint" onclick="swWorkspace('osint')">◎ OSINT</button>
+<div id="global-dock">
+  <div id="global-dock-inner">
+    <button class="gdock-btn map active" id="gdock-map" onclick="swWorkspace('map')">◈ INTEL MAP</button>
+    <button class="gdock-btn osint" id="gdock-osint" onclick="swWorkspace('osint');swTab('log')">◎ OSINT</button>
+    <div class="gdock-sep"></div>
+    <button class="gdock-btn rdb" id="gdock-rdb" onclick="swWorkspace('ravendb')">⬡ RAVENBD</button>
+    <button class="gdock-btn ai" id="gdock-ai" onclick="swWorkspace('osint');swTab('chat')">◇ AI AGENT</button>
+  </div>
 </div>
 
 <script>
@@ -806,14 +796,18 @@ var FORUM_URL = '{{ forum_url or "" }}';
 // ═══════════════════════════════════════════════════════
 // WORKSPACE + STATUS BAR
 // ═══════════════════════════════════════════════════════
-function swWorkspace(ws){
+function swWorkspace(ws, opts){
+  opts = opts || {};
   document.querySelectorAll('.workspace').forEach(function(el){
     el.classList.toggle('active', el.id === 'ws-'+ws);
   });
-  var isMap = ws==='map', isOsint = ws==='osint';
-  document.getElementById('mode-map').classList.toggle('active', isMap);
-  document.getElementById('mode-osint').classList.toggle('active', isOsint);
-  document.getElementById('mode-switcher').style.display = (isMap||isOsint)?'flex':'none';
+  var isMap = ws==='map', isOsint = ws==='osint', isRdb = ws==='ravendb';
+  var aiActive = isOsint && document.getElementById('panel-chat').classList.contains('show');
+  document.getElementById('gdock-map').classList.toggle('active', isMap);
+  document.getElementById('gdock-osint').classList.toggle('active', isOsint && !aiActive);
+  document.getElementById('gdock-rdb').classList.toggle('active', isRdb);
+  document.getElementById('gdock-ai').classList.toggle('active', aiActive);
+  document.getElementById('dock-tabs').style.display = isOsint ? 'flex' : 'none';
   if(ws==='osint'){
     setTimeout(resizeNet, 50);
     setTimeout(resizeNet, 200);
@@ -1068,10 +1062,7 @@ function loadThreatFeed(){
 }
 
 function swView(v){
-  document.querySelectorAll('.vsw').forEach(function(b){b.classList.toggle('active',b.textContent.toLowerCase().includes(v==='net'?'osint':'intel'));});
-  document.getElementById('net-canvas').style.display=v==='net'?'block':'none';
-  var mc=document.getElementById('map-container');
-  if(mc.closest('#center')) mc.classList.toggle('show',v==='map');
+  document.getElementById('net-canvas').style.display='block';
 }
 
 function initMap(){
@@ -1617,6 +1608,11 @@ function swTab(t){
     if(i<4) el.classList.toggle('active',ns[i]===t);
   });
   ns.forEach(function(n){document.getElementById('panel-'+n).classList.toggle('show',n===t);});
+  if(document.getElementById('ws-osint').classList.contains('active')){
+    var aiActive = t==='chat';
+    document.getElementById('gdock-osint').classList.toggle('active', !aiActive);
+    document.getElementById('gdock-ai').classList.toggle('active', aiActive);
+  }
 }
 
 // ═══════════════════════════════════════════════════════

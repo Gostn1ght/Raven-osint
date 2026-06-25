@@ -564,13 +564,19 @@ def run_ip(target, q):
     try:
         ip = socket.gethostbyname(target)
         q.put({"module":"ip","type":"found","text":f"IP: {ip}"})
-        with urllib.request.urlopen(f"http://ip-api.com/json/{ip}?fields=country,regionName,city,isp,org,as,reverse,timezone,proxy,hosting,query", timeout=8) as r:
+        with urllib.request.urlopen(
+            f"http://ip-api.com/json/{ip}?fields=status,country,regionName,city,lat,lon,isp,org,as,reverse,timezone,proxy,hosting,query",
+            timeout=8) as r:
             d = json.loads(r.read())
         labels={"country":"Страна","regionName":"Регион","city":"Город","isp":"ISP","org":"Org",
                 "as":"AS","reverse":"rDNS","timezone":"TZ","proxy":"Proxy/VPN","hosting":"Хостинг"}
         for k,v in d.items():
-            if v and k!='query' and v is not False:
+            if v and k not in ('query','status','lat','lon') and v is not False:
                 q.put({"module":"ip","type":"found","text":f"IP {labels.get(k,k)}: {v}"})
+        if d.get('lat') and d.get('lon'):
+            city = d.get('city') or target
+            q.put({"module":"ip","type":"found",
+                   "text":f"★ GEO_PIN:{d['lat']},{d['lon']}|{city}, {d.get('country','')}|{target}"})
         q.put({"module":"ip","type":"found","text":f"Shodan: https://www.shodan.io/host/{ip}"})
         q.put({"module":"ip","type":"found","text":f"VirusTotal: https://www.virustotal.com/gui/ip-address/{ip}"})
     except Exception as e:
@@ -1060,6 +1066,85 @@ def intel_threats():
     ]
     return jsonify({'threats': threats, 'status': 'MONITORING'})
 
+def _parse_rss(xml_text, source, category, limit=15):
+    items = []
+    blocks = re.findall(r'<item[^>]*>(.*?)</item>', xml_text, re.DOTALL | re.IGNORECASE)
+    for block in blocks[:limit]:
+        title = re.search(r'<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', block, re.DOTALL | re.IGNORECASE)
+        link = re.search(r'<link[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</link>', block, re.DOTALL | re.IGNORECASE)
+        pub = re.search(r'<pubDate[^>]*>(.*?)</pubDate>', block, re.IGNORECASE)
+        if not title:
+            continue
+        t = re.sub(r'<[^>]+>', '', title.group(1)).strip()
+        u = re.sub(r'<[^>]+>', '', (link.group(1) if link else '')).strip()
+        items.append({
+            'title': t[:200],
+            'url': u[:500],
+            'time': (pub.group(1).strip()[:25] if pub else ''),
+            'source': source,
+            'category': category,
+        })
+    return items
+
+@app.route('/api/intel/news')
+def intel_news():
+    ip = request.remote_addr
+    if not rate_limit(ip, window=60, max_req=20):
+        return jsonify({'error': 'rate limit'}), 429
+    cat = request.args.get('cat', 'all')
+    feeds = [
+        ('cyber', 'TheHackerNews', 'https://feeds.feedburner.com/TheHackersNews'),
+        ('malware', 'BleepingComputer', 'https://www.bleepingcomputer.com/feed/'),
+        ('breach', 'SecurityWeek', 'https://www.securityweek.com/feed/'),
+        ('conflict', 'Reuters World', 'https://feeds.reuters.com/reuters/worldNews'),
+        ('virus', 'CDC Health', 'https://tools.cdc.gov/api/v2/resources/media/403372.rss'),
+    ]
+    all_items = []
+    for category, name, url in feeds:
+        if cat != 'all' and cat != category:
+            continue
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Raven-Intel/4.0'})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                all_items.extend(_parse_rss(r.read().decode('utf-8', 'ignore'), name, category, 8))
+        except Exception:
+            pass
+    all_items.sort(key=lambda x: x.get('time', ''), reverse=True)
+    return jsonify({'items': all_items[:40], 'category': cat})
+
+@app.route('/api/intel/malware')
+def intel_malware():
+    ip = request.remote_addr
+    if not rate_limit(ip, window=60, max_req=15):
+        return jsonify({'error': 'rate limit'}), 429
+    hotspots = [
+        {'lat': 55.75, 'lon': 37.62, 'lvl': 8, 'text': 'RU — активные C2-сети', 'type': 'c2'},
+        {'lat': 39.9, 'lon': 116.4, 'lvl': 7, 'text': 'CN — фишинг-кампании', 'type': 'phish'},
+        {'lat': 40.7, 'lon': -74.0, 'lvl': 6, 'text': 'US — ransomware узлы', 'type': 'ransom'},
+        {'lat': 52.5, 'lon': 13.4, 'lvl': 5, 'text': 'EU — botnet активность', 'type': 'botnet'},
+        {'lat': 28.6, 'lon': 77.2, 'lvl': 6, 'text': 'IN — malware хостинг', 'type': 'malware'},
+        {'lat': -23.5, 'lon': -46.6, 'lvl': 4, 'text': 'BR — спам-инфраструктура', 'type': 'spam'},
+    ]
+    recent = []
+    try:
+        req = urllib.request.Request(
+            'https://urlhaus-api.abuse.ch/v1/urls/recent/limit/30/',
+            headers={'User-Agent': 'Raven-Intel/4.0'},
+            data=b'',
+            method='POST')
+        with urllib.request.urlopen(req, timeout=12) as r:
+            data = json.loads(r.read())
+        for entry in (data.get('urls') or [])[:20]:
+            recent.append({
+                'url': entry.get('url', '')[:120],
+                'threat': entry.get('threat', 'malware'),
+                'date': entry.get('date_added', ''),
+                'status': entry.get('url_status', ''),
+            })
+    except Exception:
+        pass
+    return jsonify({'hotspots': hotspots, 'recent': recent, 'count': len(recent)})
+
 @app.route('/api/ravendb/<int:db_id>/toggle', methods=['POST'])
 @login_required
 def toggle_ravendb(db_id):
@@ -1111,6 +1196,8 @@ def investigate():
         user_dbs = [{'id':d.id,'name':d.name,'url':d.url,'db_type':d.db_type,
                      'keywords':d.keywords,'enabled':d.enabled,'hits':d.hits}
                     for d in RavenDB.query.filter_by(user_id=uid, enabled=True).all()]
+    elif data.get('ravendb'):
+        user_dbs = [x for x in data.get('ravendb', []) if x.get('enabled', True)]
 
     q = queue.Queue()
     threads = []

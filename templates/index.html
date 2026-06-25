@@ -38,21 +38,17 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   background-size:40px 40px;animation:gridScroll 40s linear infinite}
 @keyframes gridScroll{0%{background-position:0 0}100%{background-position:0 40px}}
 
-/* feathers */
-#feather-layer{position:fixed;inset:0;pointer-events:none;z-index:8900;overflow:hidden}
-.feather{position:absolute;top:-50px;border-radius:50% 50% 45% 45%;
-  background:linear-gradient(180deg,transparent,rgba(0,245,255,.12) 45%,rgba(0,100,140,.06));
-  animation:fall linear infinite}
-@keyframes fall{0%{opacity:0;transform:translateY(0) rotate(var(--fr)) scaleX(1)}
-  8%{opacity:var(--fo)}50%{transform:translateY(50vh) rotate(calc(var(--fr)+18deg)) scaleX(-1)}
-  92%{opacity:calc(var(--fo)*.4)}100%{opacity:0;transform:translateY(105vh) rotate(calc(var(--fr)+38deg)) scaleX(1)}}
+/* feathers — removed */
+
+/* ghoul logo */
+#ghoul-logo{width:42px;height:42px;flex-shrink:0;filter:drop-shadow(0 0 10px rgba(255,45,85,.5))}
 
 /* ── TOPBAR ─────────────────────────────── */
 #topbar{position:fixed;top:0;left:0;right:0;height:48px;z-index:200;
   background:rgba(6,8,16,.97);border-bottom:1px solid var(--cyan3);
   display:flex;align-items:center;padding:0 .8rem;gap:.6rem;
   backdrop-filter:blur(12px)}
-#raven-cv{display:block;flex-shrink:0;filter:drop-shadow(0 0 8px var(--cyan))}
+#raven-cv{display:none}
 .logo-name{font-size:1.15rem;font-weight:900;letter-spacing:.32em;color:var(--text);
   text-shadow:0 0 20px rgba(255,45,85,.3)}
 .logo-name span{color:var(--mag)}
@@ -130,10 +126,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 .sk{font-size:.54rem;color:var(--textd);text-transform:uppercase;letter-spacing:.1em}
 
 /* ── CENTER ─────────────────────────────── */
-#center{flex:1;position:relative;overflow:hidden}
+#center{flex:1;position:relative;overflow:hidden;min-height:200px;min-width:0}
 
 /* Network canvas */
-#net-canvas{position:absolute;inset:0;display:block;cursor:crosshair;z-index:2}
+#net-canvas{position:absolute;inset:0;display:block;cursor:crosshair;z-index:2;width:100%;height:100%}
 #net-canvas.drag{cursor:grabbing}
 
 /* Leaflet map */
@@ -184,16 +180,34 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 
 /* ── RIGHT PANEL ────────────────────────── */
 #right{width:330px;flex-shrink:0;background:var(--panel);
-  border-left:1px solid var(--b1);display:flex;flex-direction:column;z-index:10}
-#tabs{display:flex;border-bottom:1px solid var(--b1);flex-shrink:0;overflow-x:auto}
-#tabs::-webkit-scrollbar{height:0}
+  border-left:1px solid var(--b1);display:flex;flex-direction:column;z-index:10;min-height:0}
+#panel-area{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#dock-tabs{display:flex;border-top:1px solid var(--b1);flex-shrink:0;height:34px;background:rgba(0,0,0,.9);z-index:20}
+#dock-tabs .tab{flex:1;padding:.38rem .25rem;font-size:.54rem;border-bottom:none;border-top:2px solid transparent;
+  display:flex;align-items:center;justify-content:center}
+#dock-tabs .tab.active{border-top-color:var(--cyan);border-bottom:none;color:var(--cyan);background:rgba(0,229,255,.04)}
+#tabs{display:none}
 .tab{flex-shrink:0;padding:.42rem .6rem;font-size:.58rem;font-weight:700;color:var(--textd);
   cursor:pointer;text-align:center;letter-spacing:.1em;text-transform:uppercase;
-  border-bottom:2px solid transparent;transition:all .15s;font-family:inherit;white-space:nowrap}
+  border-bottom:2px solid transparent;transition:color .15s,border-color .15s,background .15s;font-family:inherit;white-space:nowrap}
 .tab:hover{color:var(--textm)}
-.tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
-.panel{flex:1;display:none;flex-direction:column;overflow:hidden}
+.tab.active{color:var(--cyan)}
+.panel{flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0}
 .panel.show{display:flex}
+
+/* Map news feed */
+#news-panel{position:absolute;bottom:12px;left:240px;right:220px;z-index:45;
+  background:rgba(0,0,0,.88);border:1px solid var(--b1);border-radius:5px;max-height:150px;
+  display:flex;flex-direction:column;overflow:hidden}
+#news-head{padding:.3rem .5rem;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:.35rem;flex-shrink:0;cursor:pointer}
+#news-head span{font-size:.58rem;font-weight:900;color:var(--cyan);letter-spacing:.1em}
+#news-cats{display:flex;gap:.2rem;flex-wrap:wrap;margin-left:auto}
+.ncat{font-size:.5rem;padding:1px 6px;border:1px solid var(--b1);border-radius:2px;cursor:pointer;color:var(--textd);text-transform:uppercase}
+.ncat.on{border-color:var(--mag);color:var(--mag)}
+#news-list{overflow-y:auto;padding:.3rem .5rem;font-size:.58rem;line-height:1.55;flex:1}
+#news-panel.collapsed #news-list,#news-panel.collapsed #news-cats{display:none}
+.news-row{margin-bottom:.2rem;border-bottom:1px solid rgba(255,255,255,.04);padding-bottom:.12rem}
+.news-cat-tag{color:var(--mag);font-size:.5rem;margin-right:.3rem}
 
 /* Console */
 #log-out{flex:1;padding:.5rem;font-size:.63rem;line-height:1.75;
@@ -449,7 +463,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 </style>
 </head>
 <body>
-<div id="feather-layer"></div>
 
 <!-- AUTH MODAL -->
 <div id="auth-modal">
@@ -485,7 +498,17 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 
 <!-- TOPBAR -->
 <div id="topbar">
-  <canvas id="raven-cv" width="40" height="40"></canvas>
+  <svg id="ghoul-logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff2d55"/><stop offset="100%" stop-color="#660022"/></linearGradient></defs>
+    <path d="M32 6 L52 18 L56 38 L48 58 L32 54 L16 58 L8 38 L12 18 Z" fill="#0a0a0f" stroke="url(#glow)" stroke-width="1.5"/>
+    <path d="M32 14 C22 22 18 32 20 44 L32 50 L44 44 C46 32 42 22 32 14Z" fill="#111118" stroke="#ff2d55" stroke-width=".8" opacity=".9"/>
+    <ellipse cx="26" cy="30" rx="3" ry="4" fill="#ff2d55"/><ellipse cx="38" cy="30" rx="3" ry="4" fill="#ff2d55"/>
+    <ellipse cx="26" cy="30" rx="1" ry="2" fill="#00e5ff" opacity=".8"/><ellipse cx="38" cy="30" rx="1" ry="2" fill="#00e5ff" opacity=".8"/>
+    <path d="M28 38 Q32 42 36 38" fill="none" stroke="#ff2d55" stroke-width="1.2"/>
+    <path d="M18 20 L10 8 M46 20 L54 8" stroke="#ff2d55" stroke-width="1" opacity=".5"/>
+    <text x="32" y="62" text-anchor="middle" fill="#ff2d55" font-size="5" font-family="monospace" opacity=".6">GHOST</text>
+  </svg>
+  <canvas id="raven-cv" width="40" height="40" style="display:none"></canvas>
   <div>
     <div class="logo-name"><span>R</span>AVEN</div>
     <div class="logo-sub">GLOBAL THREAT INTERCEPT</div>
@@ -550,8 +573,24 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
         <div class="ml-item"><span class="ml-icon" style="color:var(--mag)">⚡</span><span class="ml-name">Earthquakes</span><span class="ml-cnt" id="lc-eq">—</span><button class="ml-toggle on" id="lt-eq" onclick="toggleLayer('eq')">ON</button></div>
         <div class="ml-item"><span class="ml-icon" style="color:var(--ora)">◉</span><span class="ml-name">Threat Intel</span><span class="ml-cnt" id="lc-th">—</span><button class="ml-toggle on" id="lt-th" onclick="toggleLayer('th')">ON</button></div>
         <div class="ml-item"><span class="ml-icon" style="color:var(--grn)">📡</span><span class="ml-name">ISS / Sats</span><span class="ml-cnt" id="lc-iss">LIVE</span><button class="ml-toggle on" id="lt-iss" onclick="toggleLayer('iss')">ON</button></div>
+        <div class="ml-item"><span class="ml-icon" style="color:var(--red)">☣</span><span class="ml-name">Malware/C2</span><span class="ml-cnt" id="lc-malware">—</span><button class="ml-toggle on" id="lt-malware" onclick="toggleLayer('malware')">ON</button></div>
+        <div class="ml-item"><span class="ml-icon" style="color:#aa44ff">◎</span><span class="ml-name">OSINT Pins</span><span class="ml-cnt" id="lc-pins">0</span><button class="ml-toggle on" id="lt-pins" onclick="toggleLayer('pins')">ON</button></div>
       </div>
       <div id="alert-feed" class="show"></div>
+      <div id="news-panel">
+        <div id="news-head" onclick="document.getElementById('news-panel').classList.toggle('collapsed')">
+          <span>◈ LIVE INTEL FEED</span>
+          <div id="news-cats">
+            <span class="ncat on" data-cat="all" onclick="event.stopPropagation();setNewsCat('all')">ALL</span>
+            <span class="ncat" data-cat="cyber" onclick="event.stopPropagation();setNewsCat('cyber')">CYBER</span>
+            <span class="ncat" data-cat="malware" onclick="event.stopPropagation();setNewsCat('malware')">MALWARE</span>
+            <span class="ncat" data-cat="breach" onclick="event.stopPropagation();setNewsCat('breach')">BREACH</span>
+            <span class="ncat" data-cat="conflict" onclick="event.stopPropagation();setNewsCat('conflict')">CONFLICT</span>
+            <span class="ncat" data-cat="virus" onclick="event.stopPropagation();setNewsCat('virus')">VIRUS</span>
+          </div>
+        </div>
+        <div id="news-list"><div style="color:var(--textd)">Загрузка новостей...</div></div>
+      </div>
     </div>
     <div id="hud" style="position:absolute;top:.6rem;left:50%;transform:translateX(-50%);z-index:5;text-align:center;pointer-events:none">
       <div id="map-title" style="font-size:.75rem;font-weight:900;letter-spacing:.24em;color:var(--cyan)">GLOBAL THEATER</div>
@@ -639,13 +678,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 
   <!-- RIGHT -->
   <div id="right">
-    <div id="tabs">
-      <div class="tab active" onclick="swTab('log')">КОНСОЛЬ</div>
-      <div class="tab" onclick="swTab('res')">ДОСЬЕ</div>
-      <div class="tab" onclick="swTab('rdb')">RAVENBD</div>
-      <div class="tab" onclick="swTab('chat')">AI</div>
-      <div class="tab" onclick="swWorkspace('map')" style="color:var(--mag)">◈ MAP</div>
-    </div>
+    <div id="panel-area">
     <!-- Console -->
     <div class="panel show" id="panel-log">
       <div id="log-out"><div class="ll info"><span class="lts">[INIT]</span>Raven OSINT v4 готов.</div></div>
@@ -694,6 +727,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
         <textarea id="cinput" rows="2" placeholder="Вопрос..."></textarea>
         <button id="csend" onclick="sendChat()">►</button>
       </div>
+    </div>
+    </div>
+    <div id="dock-tabs">
+      <div class="tab active" onclick="swTab('log')">КОНСОЛЬ</div>
+      <div class="tab" onclick="swTab('res')">ДОСЬЕ</div>
+      <div class="tab" onclick="swTab('rdb')">RAVENBD</div>
+      <div class="tab" onclick="swTab('chat')">AI</div>
+      <div class="tab" onclick="swWorkspace('map')" style="color:var(--mag)">◈ MAP</div>
     </div>
   </div>
 </div>
@@ -761,6 +802,10 @@ function swWorkspace(ws){
              (ws==='ravendb' && b.textContent.includes('RAVENBD'));
     b.classList.toggle('active', on);
   });
+  if(ws==='osint'){
+    setTimeout(resizeNet, 50);
+    setTimeout(resizeNet, 200);
+  }
   if(ws==='map' && !mapInited){initMap();mapInited=true;}
   if(ws==='map' && leafletMap) setTimeout(function(){leafletMap.invalidateSize();}, 100);
   if(ws==='ravendb'){loadRavenDBList();renderRBDDbList();}
@@ -774,66 +819,10 @@ function tickStatusBar(){
 setInterval(tickStatusBar, 1000); tickStatusBar();
 
 // ═══════════════════════════════════════════════════════
-// CANVAS RAVEN ANIMATION
-// ═══════════════════════════════════════════════════════
-(function(){
-  var rc=document.getElementById('raven-cv'),rx=rc.getContext('2d'),t=0;
-  function draw(){
-    requestAnimationFrame(draw);rx.clearRect(0,0,40,40);t+=0.05;
-    var wf=Math.sin(t*4.5);
-    rx.save();rx.translate(20,22);
-    rx.shadowColor='#00f5ff';rx.shadowBlur=8;rx.fillStyle='#00aabb';
-    // left wing
-    rx.save();rx.rotate(-0.22+wf*0.52);
-    rx.beginPath();rx.moveTo(-1,-1);
-    rx.bezierCurveTo(-9,-5+wf*3.5,-16,0,-13,6);
-    rx.bezierCurveTo(-8,9,-3,4,-1,0);
-    rx.closePath();rx.fill();rx.restore();
-    // right wing
-    rx.save();rx.rotate(0.22-wf*0.52);
-    rx.beginPath();rx.moveTo(1,-1);
-    rx.bezierCurveTo(9,-5+wf*3.5,16,0,13,6);
-    rx.bezierCurveTo(8,9,3,4,1,0);
-    rx.closePath();rx.fill();rx.restore();
-    // body
-    rx.beginPath();rx.ellipse(0,1,4.5,6.5,0,0,Math.PI*2);rx.fill();
-    // head
-    rx.beginPath();rx.ellipse(1.5,-8,3.5,3,0.2,0,Math.PI*2);rx.fill();
-    // beak
-    rx.beginPath();rx.moveTo(4,-8);rx.lineTo(10,-7.5);rx.lineTo(5,-6.5);rx.closePath();rx.fill();
-    // tail
-    rx.beginPath();rx.moveTo(-2.5,6.5);
-    rx.bezierCurveTo(-5,11,-1.5,14,0,12.5);
-    rx.bezierCurveTo(1.5,14,5,11,2.5,6.5);rx.fill();
-    // eye
-    rx.shadowColor='#00ffff';rx.shadowBlur=14;rx.fillStyle='#00ffdd';
-    rx.beginPath();rx.arc(4,-9,1.5,0,Math.PI*2);rx.fill();
-    rx.shadowBlur=0;rx.restore();
-  }
-  draw();
-})();
-
-// ═══════════════════════════════════════════════════════
-// FEATHERS
-// ═══════════════════════════════════════════════════════
-(function(){
-  var l=document.getElementById('feather-layer');
-  for(var i=0;i<28;i++){
-    var f=document.createElement('div');f.className='feather';
-    var dur=12+Math.random()*16,delay=-Math.random()*dur;
-    f.style.cssText='left:'+Math.random()*103+'vw;animation-duration:'+dur+'s;'+
-      'animation-delay:'+delay+'s;--fr:'+(Math.random()*70-35)+'deg;'+
-      '--fo:'+(0.18+Math.random()*.3)+';width:'+(1.2+Math.random()*2)+'px;'+
-      'height:'+(9+Math.random()*12)+'px';
-    l.appendChild(f);
-  }
-})();
-
-// ═══════════════════════════════════════════════════════
 // NETWORK CANVAS
 // ═══════════════════════════════════════════════════════
 var cv=document.getElementById('net-canvas');
-var cx=cv.getContext('2d');
+var cx=cv?cv.getContext('2d'):null;
 var NODES=[
   {id:'target',  label:'TARGET',   col:'#00f5ff',x3:0,    y3:0,   z3:0,  r:19,desc:'Цель расследования'},
   {id:'sherlock',label:'SHERLOCK', col:'#00f5ff',x3:110,  y3:0,   z3:-30,r:11,desc:'Поиск на 400+ платформах'},
@@ -919,7 +908,7 @@ function drawEdge(a,b,pA,pB){
   cx.lineWidth=active?1:.3;cx.setLineDash(active?[]:[2,8]);cx.stroke();cx.setLineDash([]);
 }
 function render(){
-  requestAnimationFrame(render);
+  if(!cv||!cx||!cv.width||!cv.height) return;
   if(autoRot)rotY+=.0025;
   var W=cv.width,H=cv.height;cx.clearRect(0,0,W,H);
   var bg=cx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)/1.4);
@@ -955,8 +944,23 @@ function render(){
   }
   order.forEach(function(i){drawNode(NODES[i],projs[i]);});
 }
-function resize(){var c=document.getElementById('center');cv.width=c.clientWidth;cv.height=c.clientHeight;}
-window.addEventListener('resize',resize);resize();render();
+function resizeNet(){
+  if(!cv) return;
+  var c=document.getElementById('center');
+  if(!c) return;
+  var w=c.clientWidth,h=c.clientHeight;
+  if(w<20||h<20) return;
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
+}
+function resize(){resizeNet();}
+if(typeof ResizeObserver!=='undefined'){
+  var ro=new ResizeObserver(function(){resizeNet();});
+  var centerEl=document.getElementById('center');
+  if(centerEl) ro.observe(centerEl);
+}
+window.addEventListener('resize',resize);
+setTimeout(resizeNet,100);
+if(cv) requestAnimationFrame(function loop(){render();requestAnimationFrame(loop);});
 cv.addEventListener('mousedown',function(e){isDrag=false;prevX=e.clientX;prevY=e.clientY;});
 window.addEventListener('mousemove',function(e){
   if(e.buttons&&Math.abs(e.clientX-prevX)+Math.abs(e.clientY-prevY)>3){
@@ -1003,15 +1007,20 @@ function clickMod(id){var n=NODES.find(function(x){return x.id===id;});if(n){act
 // VIEW SWITCHER
 // ═══════════════════════════════════════════════════════
 var leafletMap=null,mapInited=false;
-var layerStates={commercial:true,private:true,military:true,eq:true,th:true,iss:true};
+var layerStates={commercial:true,private:true,military:true,eq:true,th:true,iss:true,malware:true,pins:true};
 var layerData={};
-var leafletLayers={commercial:null,private:null,military:null,eq:null,th:null,iss:null};
+var leafletLayers={commercial:null,private:null,military:null,eq:null,th:null,iss:null,malware:null,pins:null};
+var osintPins=[];
+var newsCategory='all';
 
 function loadMapData(){
   ['commercial','private','military'].forEach(function(k){ if(layerStates[k]) loadAircraftLayer(k); });
   if(layerStates.eq) loadEarthquakeData();
   if(layerStates.th) loadThreatData();
   if(layerStates.iss) loadISS();
+  if(layerStates.malware) loadMalwareLayer();
+  if(layerStates.pins) renderOsintPins();
+  loadNewsFeed();
 }
 
 function loadAircraftLayer(kind){
@@ -1065,8 +1074,64 @@ function initMap(){
   });
   loadMapData();
   loadThreatFeed();
+  loadNewsFeed();
   setInterval(loadMapData,45000);
   setInterval(loadThreatFeed,60000);
+  setInterval(loadNewsFeed,120000);
+}
+
+function loadMalwareLayer(){
+  if(!leafletMap) return;
+  if(leafletLayers.malware) leafletMap.removeLayer(leafletLayers.malware);
+  fetch('/api/intel/malware').then(function(r){return r.json();}).then(function(d){
+    var group=L.layerGroup();
+    (d.hotspots||[]).forEach(function(h){
+      var col=h.lvl>=7?'#ff3b30':h.lvl>=5?'#ff9500':'#aa44ff';
+      L.marker([h.lat,h.lon],{icon:createIcon(col,10,'☣')}).addTo(group)
+        .bindPopup('<div style="font-family:monospace;font-size:11px;background:#000;color:'+col+';border:1px solid #333;padding:6px"><b>'+h.type.toUpperCase()+'</b><br>'+h.text+'<br>LVL '+h.lvl+'</div>');
+    });
+    leafletLayers.malware=group.addTo(leafletMap);
+    var el=document.getElementById('lc-malware'); if(el) el.textContent=(d.hotspots||[]).length;
+  }).catch(function(){});
+}
+
+function addOsintPin(lat,lon,label,detail){
+  osintPins.push({lat:lat,lon:lon,label:label,detail:detail||''});
+  var el=document.getElementById('lc-pins'); if(el) el.textContent=osintPins.length;
+  if(layerStates.pins) renderOsintPins();
+  if(leafletMap) leafletMap.setView([lat,lon], Math.max(leafletMap.getZoom(),4));
+}
+
+function renderOsintPins(){
+  if(!leafletMap||!layerStates.pins) return;
+  if(leafletLayers.pins) leafletMap.removeLayer(leafletLayers.pins);
+  var group=L.layerGroup();
+  osintPins.forEach(function(p){
+    L.marker([p.lat,p.lon],{icon:createIcon('#ff2d55',12,'◎')}).addTo(group)
+      .bindPopup('<div style="font-family:monospace;font-size:11px;background:#000;color:#ff2d55;border:1px solid #333;padding:6px"><b>OSINT: '+p.label+'</b><br>'+(p.detail||'')+'</div>');
+  });
+  leafletLayers.pins=group.addTo(leafletMap);
+}
+
+function setNewsCat(cat){
+  newsCategory=cat;
+  document.querySelectorAll('.ncat').forEach(function(el){el.classList.toggle('on',el.dataset.cat===cat);});
+  loadNewsFeed();
+}
+
+function loadNewsFeed(){
+  fetch('/api/intel/news?cat='+encodeURIComponent(newsCategory)).then(function(r){return r.json();}).then(function(d){
+    var list=document.getElementById('news-list'); if(!list) return;
+    list.innerHTML='';
+    (d.items||[]).slice(0,12).forEach(function(n){
+      var row=document.createElement('div'); row.className='news-row';
+      row.innerHTML='<span class="news-cat-tag">['+n.category+']</span>'+
+        (n.url?'<a href="'+esc(n.url)+'" target="_blank" rel="noopener">'+esc(n.title)+'</a>':esc(n.title))+
+        ' <span style="color:var(--textd);font-size:.5rem">'+esc(n.source)+'</span>';
+      list.appendChild(row);
+    });
+    if(!(d.items||[]).length) list.innerHTML='<div style="color:var(--textd)">Нет новостей</div>';
+  }).catch(function(){});
 }
 
 function createIcon(color,size,symbol){
@@ -1131,6 +1196,8 @@ function toggleLayer(layer){
     else if(layer==='eq') loadEarthquakeData();
     else if(layer==='th') loadThreatData();
     else if(layer==='iss') loadISS();
+    else if(layer==='malware') loadMalwareLayer();
+    else if(layer==='pins') renderOsintPins();
   }
 }
 function toggleLayerPanel(){
@@ -1512,7 +1579,9 @@ function addResult(mod,text){
 
 function swTab(t){
   var ns=['log','res','rdb','chat'];
-  document.querySelectorAll('.tab').forEach(function(el,i){el.classList.toggle('active',ns[i]===t);});
+  document.querySelectorAll('#dock-tabs .tab').forEach(function(el,i){
+    if(i<4) el.classList.toggle('active',ns[i]===t);
+  });
   ns.forEach(function(n){document.getElementById('panel-'+n).classList.toggle('show',n===t);});
 }
 
@@ -1526,6 +1595,8 @@ async function startInv(){
   var email=document.getElementById('i-email').value.trim();
   var domain=document.getElementById('i-domain').value.trim();
   if(!name&&!user&&!phone&&!email&&!domain){addLog('error','','Введите хотя бы одно поле!');return;}
+  swWorkspace('osint');
+  resizeNet();
   clearAll();
   var target=[name,user,phone,email,domain].filter(Boolean).join(' / ');
   document.getElementById('target-display').textContent=target.toUpperCase().substring(0,44);
@@ -1536,8 +1607,10 @@ async function startInv(){
   setMod('target','found');
   startTime=Date.now();
   timerInt=setInterval(function(){document.getElementById('s-time').textContent=Math.round((Date.now()-startTime)/1000)+'s';},500);
-  swTab('log');
-  var resp=await fetch('/investigate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,user,phone,email,domain})});
+  var rdbPayload=localRDB.filter(function(d){return d.enabled;});
+  runAutoRavenBDSearch(target);
+  var resp=await fetch('/investigate',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,user,phone,email,domain,ravendb:rdbPayload})});
   var reader=resp.body.getReader(),dec=new TextDecoder(),buf='';
   while(true){
     var rd=await reader.read();if(rd.done)break;
@@ -1559,12 +1632,37 @@ async function startInv(){
   var el=document.getElementById('s-score');el.textContent=sc;
   el.style.color=foundCount>30?'var(--red)':foundCount>12?'var(--ora)':foundCount>4?'var(--yel)':'var(--grn)';
   addLog('done','','Расследование завершено: '+foundCount+' записей за '+elapsed+'s');
-  swTab('res');
+}
+
+async function runAutoRavenBDSearch(target){
+  if(currentUser){
+    try{
+      var r=await fetch('/api/ravendb/search',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify({query:target})});
+      var d=await r.json();
+      (d.results||[]).forEach(function(x){
+        if(x.found) addLog('found','ravendb','★ '+x.name+': '+x.snippet);
+      });
+    }catch(e){}
+  } else if(localRDB.length){
+    addLog('info','ravendb','Проверка '+localRDB.length+' локальных баз (включены в скан)...');
+  }
+  try{
+    var r2=await fetch('/api/ravendb/ahmia?q='+encodeURIComponent(target));
+    var a=await r2.json();
+    (a.results||[]).slice(0,5).forEach(function(x){
+      addLog('found','darkweb','Tor: '+x.title);
+    });
+  }catch(e){}
 }
 
 function handleEv(ev){
   var mod=ev.module,type=ev.type,text=ev.text||'';
   var dispMod=(mod==='dns')?'whois':mod;
+  if(type==='found' && text.indexOf('GEO_PIN:')>=0){
+    var m=text.match(/GEO_PIN:([\d.\-]+),([\d.\-]+)\|([^|]+)\|?(.*)/);
+    if(m) addOsintPin(parseFloat(m[1]),parseFloat(m[2]),m[3],m[4]||'');
+    return;
+  }
   if(type==='running'){setMod(dispMod,'running');addLog('running',dispMod,text);return;}
   if(type==='done'){
     if(!doneModIds[dispMod]){
@@ -1682,6 +1780,7 @@ async function sendChat(){
 // init
 loadMe();
 initMap(); mapInited=true;
+setTimeout(resizeNet,300);
 if(new URLSearchParams(location.search).get('auth')==='ok') addLog('done','auth','OAuth вход выполнен');
 if(new URLSearchParams(location.search).get('auth')==='error') addLog('error','auth','OAuth ошибка');
 </script>

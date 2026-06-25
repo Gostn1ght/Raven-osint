@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RAVEN — Global Threat Intercept</title>
+<link rel="icon" href="/static/raven-logo.png" type="image/png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -40,8 +41,27 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 
 /* feathers — removed */
 
-/* ghoul logo */
-#ghoul-logo{width:42px;height:42px;flex-shrink:0;filter:drop-shadow(0 0 10px rgba(255,45,85,.5))}
+/* Globe map vignette */
+#map-container::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:44;
+  background:radial-gradient(ellipse 75% 85% at 50% 50%,transparent 35%,rgba(0,0,0,.55) 100%)}
+.leaflet-container{background:#000!important}
+
+/* Bottom mode switcher — fixed, always same spot */
+#mode-switcher{position:fixed;bottom:34px;left:50%;transform:translateX(-50%);z-index:260;
+  display:flex;gap:.45rem;padding:.2rem;background:rgba(0,0,0,.45);backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,.08);border-radius:6px}
+.mode-btn{padding:.45rem 1.1rem;font-size:.62rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;
+  background:rgba(255,255,255,.04);border:1px solid var(--b1);border-radius:4px;color:var(--textd);
+  cursor:pointer;font-family:inherit;transition:all .2s}
+.mode-btn:hover{color:var(--textm);border-color:var(--b2)}
+.mode-btn.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,229,255,.1);
+  box-shadow:0 0 18px rgba(0,229,255,.22),inset 0 0 12px rgba(0,229,255,.06)}
+.mode-btn.osint.active{color:var(--mag);border-color:var(--mag);background:rgba(255,45,85,.08);
+  box-shadow:0 0 18px rgba(255,45,85,.2),inset 0 0 12px rgba(255,45,85,.05)}
+
+/* Logo */
+#site-logo{width:42px;height:42px;object-fit:contain;flex-shrink:0;
+  filter:invert(1) drop-shadow(0 0 10px rgba(0,229,255,.4))}
 
 /* ── TOPBAR ─────────────────────────────── */
 #topbar{position:fixed;top:0;left:0;right:0;height:48px;z-index:200;
@@ -195,10 +215,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 .panel{flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0}
 .panel.show{display:flex}
 
-/* Map news feed */
-#news-panel{position:absolute;bottom:12px;left:240px;right:220px;z-index:45;
-  background:rgba(0,0,0,.88);border:1px solid var(--b1);border-radius:5px;max-height:150px;
-  display:flex;flex-direction:column;overflow:hidden}
+/* Map news feed — under data layers */
+#news-panel{position:relative;width:100%;background:rgba(6,8,16,.97);border:1px solid var(--b1);
+  border-radius:4px;max-height:200px;display:flex;flex-direction:column;overflow:hidden;flex:1;min-height:80px}
+#news-panel.collapsed{max-height:28px;flex:none}
 #news-head{padding:.3rem .5rem;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:.35rem;flex-shrink:0;cursor:pointer}
 #news-head span{font-size:.58rem;font-weight:900;color:var(--cyan);letter-spacing:.1em}
 #news-cats{display:flex;gap:.2rem;flex-wrap:wrap;margin-left:auto}
@@ -278,10 +298,9 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 .rdb-btn.on{color:var(--grn);border-color:rgba(0,255,136,.3)}
 .rdb-empty{font-size:.65rem;color:var(--textd);text-align:center;padding:.8rem;letter-spacing:.06em}
 
-/* Map layer panel */
-#map-layers{position:absolute;top:.55rem;left:.55rem;z-index:50;
-  background:rgba(6,8,16,.97);border:1px solid var(--b2);border-radius:4px;
-  width:220px;display:none}
+/* Map left column */
+#map-left-col{position:absolute;top:.55rem;left:.55rem;z-index:50;width:230px;display:flex;flex-direction:column;gap:.35rem;max-height:calc(100% - 70px)}
+#map-layers{position:relative;background:rgba(6,8,16,.97);border:1px solid var(--b2);border-radius:4px;width:100%;flex-shrink:0}
 #map-layers.show{display:block}
 .ml-head{padding:.4rem .55rem;border-bottom:1px solid var(--b1);font-size:.65rem;font-weight:700;
   color:var(--cyan);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between}
@@ -498,17 +517,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
 
 <!-- TOPBAR -->
 <div id="topbar">
-  <svg id="ghoul-logo" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ff2d55"/><stop offset="100%" stop-color="#660022"/></linearGradient></defs>
-    <path d="M32 6 L52 18 L56 38 L48 58 L32 54 L16 58 L8 38 L12 18 Z" fill="#0a0a0f" stroke="url(#glow)" stroke-width="1.5"/>
-    <path d="M32 14 C22 22 18 32 20 44 L32 50 L44 44 C46 32 42 22 32 14Z" fill="#111118" stroke="#ff2d55" stroke-width=".8" opacity=".9"/>
-    <ellipse cx="26" cy="30" rx="3" ry="4" fill="#ff2d55"/><ellipse cx="38" cy="30" rx="3" ry="4" fill="#ff2d55"/>
-    <ellipse cx="26" cy="30" rx="1" ry="2" fill="#00e5ff" opacity=".8"/><ellipse cx="38" cy="30" rx="1" ry="2" fill="#00e5ff" opacity=".8"/>
-    <path d="M28 38 Q32 42 36 38" fill="none" stroke="#ff2d55" stroke-width="1.2"/>
-    <path d="M18 20 L10 8 M46 20 L54 8" stroke="#ff2d55" stroke-width="1" opacity=".5"/>
-    <text x="32" y="62" text-anchor="middle" fill="#ff2d55" font-size="5" font-family="monospace" opacity=".6">GHOST</text>
-  </svg>
-  <canvas id="raven-cv" width="40" height="40" style="display:none"></canvas>
+  <img id="site-logo" src="/static/raven-logo.png" alt="Raven">
   <div>
     <div class="logo-name"><span>R</span>AVEN</div>
     <div class="logo-sub">GLOBAL THREAT INTERCEPT</div>
@@ -565,6 +574,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   <div id="map-full" style="flex:1;position:relative">
     <div id="map-container" class="show" style="display:block;position:absolute;inset:0">
       <div id="map"></div>
+      <div id="map-left-col">
       <div id="map-layers" class="show">
         <div class="ml-head">DATA LAYERS <span style="cursor:pointer;color:var(--textd)" onclick="toggleLayerPanel()">−</span></div>
         <div class="ml-item"><span class="ml-icon" style="color:var(--cyan)">✈</span><span class="ml-name">Commercial</span><span class="ml-cnt" id="lc-commercial">—</span><button class="ml-toggle on" id="lt-commercial" onclick="toggleLayer('commercial')">ON</button></div>
@@ -576,7 +586,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
         <div class="ml-item"><span class="ml-icon" style="color:var(--red)">☣</span><span class="ml-name">Malware/C2</span><span class="ml-cnt" id="lc-malware">—</span><button class="ml-toggle on" id="lt-malware" onclick="toggleLayer('malware')">ON</button></div>
         <div class="ml-item"><span class="ml-icon" style="color:#aa44ff">◎</span><span class="ml-name">OSINT Pins</span><span class="ml-cnt" id="lc-pins">0</span><button class="ml-toggle on" id="lt-pins" onclick="toggleLayer('pins')">ON</button></div>
       </div>
-      <div id="alert-feed" class="show"></div>
       <div id="news-panel">
         <div id="news-head" onclick="document.getElementById('news-panel').classList.toggle('collapsed')">
           <span>◈ LIVE INTEL FEED</span>
@@ -591,17 +600,17 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
         </div>
         <div id="news-list"><div style="color:var(--textd)">Загрузка новостей...</div></div>
       </div>
-    </div>
-    <div id="hud" style="position:absolute;top:.6rem;left:50%;transform:translateX(-50%);z-index:5;text-align:center;pointer-events:none">
-      <div id="map-title" style="font-size:.75rem;font-weight:900;letter-spacing:.24em;color:var(--cyan)">GLOBAL THEATER</div>
-      <div style="font-size:.52rem;color:var(--textd);letter-spacing:.18em">REAL-TIME PUBLIC DATA INTERCEPT</div>
+      </div>
+      <div id="alert-feed" class="show"></div>
+      <div id="hud" style="position:absolute;top:.6rem;left:50%;transform:translateX(-50%);z-index:5;text-align:center;pointer-events:none">
+        <div id="map-title" style="font-size:.75rem;font-weight:900;letter-spacing:.24em;color:var(--cyan)">GLOBAL THEATER</div>
+        <div style="font-size:.52rem;color:var(--textd);letter-spacing:.18em">REAL-TIME PUBLIC DATA INTERCEPT</div>
+      </div>
     </div>
   </div>
   <div id="rnav-map">
     <div id="rnav-search"><input placeholder="Find aircraft, ports..." id="map-search-inp"></div>
-    <button class="rnav-btn active" onclick="swWorkspace('map')">◈ INTEL MAP</button>
-    <button class="rnav-btn" onclick="swWorkspace('osint')">◎ OSINT</button>
-    <button class="rnav-btn mag" onclick="swWorkspace('ravendb')">⬡ RAVENBD</button>
+    <button class="rnav-btn" onclick="swWorkspace('ravendb')">⬡ RAVENBD</button>
     <button class="rnav-btn" onclick="swWorkspace('osint');swTab('chat')">◇ AI AGENT</button>
     <div id="threat-monitor">
       <div class="tm-h">SYS.STATUS: <span id="tm-status">MONITORING</span></div>
@@ -782,6 +791,11 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;
   <span>SYS: <span id="sb-sys" style="color:var(--grn)">ONLINE</span></span>
 </div>
 
+<div id="mode-switcher">
+  <button class="mode-btn map active" id="mode-map" onclick="swWorkspace('map')">◈ INTEL MAP</button>
+  <button class="mode-btn osint" id="mode-osint" onclick="swWorkspace('osint')">◎ OSINT</button>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════
 // CSRF TOKEN (injected server-side)
@@ -796,12 +810,10 @@ function swWorkspace(ws){
   document.querySelectorAll('.workspace').forEach(function(el){
     el.classList.toggle('active', el.id === 'ws-'+ws);
   });
-  document.querySelectorAll('#rnav-map .rnav-btn').forEach(function(b){
-    var on = (ws==='map' && b.textContent.includes('MAP')) ||
-             (ws==='osint' && b.textContent.includes('OSINT') && !b.textContent.includes('RAVEN')) ||
-             (ws==='ravendb' && b.textContent.includes('RAVENBD'));
-    b.classList.toggle('active', on);
-  });
+  var isMap = ws==='map', isOsint = ws==='osint';
+  document.getElementById('mode-map').classList.toggle('active', isMap);
+  document.getElementById('mode-osint').classList.toggle('active', isOsint);
+  document.getElementById('mode-switcher').style.display = (isMap||isOsint)?'flex':'none';
   if(ws==='osint'){
     setTimeout(resizeNet, 50);
     setTimeout(resizeNet, 200);
@@ -1065,13 +1077,34 @@ function swView(v){
 function initMap(){
   var mapEl=document.getElementById('map');
   if(!mapEl||leafletMap) return;
-  leafletMap=L.map('map',{zoomControl:false,attributionControl:false}).setView([25,10],2);
+  var worldBounds=L.latLngBounds(L.latLng(-85,-180),L.latLng(85,180));
+  leafletMap=L.map('map',{
+    zoomControl:false,
+    attributionControl:false,
+    maxBounds:worldBounds,
+    maxBoundsViscosity:1.0,
+    minZoom:2,
+    maxZoom:12,
+    worldCopyJump:false
+  }).setView([20,0],2);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
-    subdomains:'abcd',maxZoom:19}).addTo(leafletMap);
+    subdomains:'abcd',
+    maxZoom:12,
+    minZoom:2,
+    noWrap:true,
+    bounds:worldBounds
+  }).addTo(leafletMap);
   L.control.zoom({position:'bottomright'}).addTo(leafletMap);
   leafletMap.on('mousemove',function(e){
     document.getElementById('sb-coords').textContent=e.latlng.lat.toFixed(4)+', '+e.latlng.lng.toFixed(4);
   });
+  leafletMap.on('moveend',function(){
+    var c=leafletMap.getCenter(), z=leafletMap.getZoom();
+    var lng=((c.lng+540)%360)-180;
+    if(Math.abs(lng-c.lng)>0.01) leafletMap.setView([c.lat,lng],z,{animate:false});
+    leafletMap.panInsideBounds(worldBounds,{animate:false});
+  });
+  leafletMap.fitBounds(worldBounds,{animate:false});
   loadMapData();
   loadThreatFeed();
   loadNewsFeed();
@@ -1203,7 +1236,8 @@ function toggleLayer(layer){
 function toggleLayerPanel(){
   var p=document.getElementById('map-layers');
   var items=p.querySelectorAll('.ml-item');
-  items.forEach(function(i){i.style.display=i.style.display==='none'?'':'none';});
+  var hide=items[0]&&items[0].style.display!=='none';
+  items.forEach(function(i){i.style.display=hide?'none':'';});
 }
 
 // ═══════════════════════════════════════════════════════

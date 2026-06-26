@@ -1181,7 +1181,7 @@ def static_files(filename):
 @app.route('/investigate', methods=['POST'])
 def investigate():
     ip = request.remote_addr
-    if not rate_limit(ip, window=60, max_req=5):
+    if not rate_limit(ip, window=60, max_req=30):
         return Response('data: {"module":"sys","type":"error","text":"Rate limit"}\n\ndata: [DONE]\n\n',
                        content_type='text/event-stream')
     data   = request.get_json(force=True, silent=True) or {}

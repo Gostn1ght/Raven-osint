@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0",
+  "productName": "RavensNexus",
+  "version": "0.1.0",
+  "identifier": "com.ravensnexus.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "resources": ["ravens-nexus-server*"],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "updater": {
+      "active": true,
+      "endpoints": ["https://your-update-server.com/{{target}}/{{arch}}/{{current_version}}"],
+      "dialog": true,
+      "pubkey": ""
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Ravens Nexus",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline' tauri: asset: http://127.0.0.1:8080 https: data: blob:"
+    }
+  }
+}

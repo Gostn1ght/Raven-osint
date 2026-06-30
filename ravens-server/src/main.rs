@@ -741,8 +741,11 @@ async fn main() {
     tracing::info!("  Admin Panel:     {}/admin-ui/admin.html", public_url);
     tracing::info!("  API base:        {}/api", public_url);
     tracing::info!("----------------------------------------------------------------");
-    tracing::info!("  ADMIN SECRET:    {}", secret);
-    tracing::info!("  (use this secret to log into the Admin Panel above)");
+    if secret == ADMIN_SECRET {
+        tracing::warn!("  ADMIN SECRET: using built-in default — set RAVENS_ADMIN_SECRET env var!");
+    } else {
+        tracing::info!("  ADMIN SECRET: configured via RAVENS_ADMIN_SECRET env var");
+    }
     tracing::info!("================================================================");
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();

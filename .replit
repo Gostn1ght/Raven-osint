@@ -9,6 +9,10 @@ channel = "stable-24_05"
 localPort = 3000
 externalPort = 3000
 
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
 [env]
 RAVENS_SERVER_PORT = "3000"
 
@@ -31,10 +35,15 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cargo run --release -p ravens-server"
-waitForPort = 3000
+waitForPort = 5000
 
-[workflows.workflow.metadata]
-outputType = "console"
+[userenv]
+
+[userenv.shared]
+RAVENS_SERVER_PORT = "5000"

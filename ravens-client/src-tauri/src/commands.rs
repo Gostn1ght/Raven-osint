@@ -7,7 +7,7 @@ pub fn get_hwid() -> String {
     hwid::get_hwid()
 }
 
-// ── CONFIG ────────────────────────────────────────────────────────────────────
+// ── CONFIG ───────────────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn save_config(key: &str, value: &str) -> Result<(), String> {
     let h = hwid::get_hwid();
@@ -44,7 +44,7 @@ fn config_path(key: &str) -> std::path::PathBuf {
     dir
 }
 
-// ── OSINT SCAN ────────────────────────────────────────────────────────────────
+// ── OSINT SCAN ───────────────────────────────────────────────────────────────
 #[derive(Debug, Deserialize)]
 pub struct ScanRequest {
     pub target: String,
@@ -69,7 +69,7 @@ pub async fn osint_scan(req: ScanRequest) -> Result<Vec<osint::OsintEvent>, Stri
             "darkweb" => osint::run_darkweb(target).await,
             "phone"   => osint::run_phone(target).await,
             "intelx"  => osint::run_intelx(target).await,
-            _ => vec![],
+            _         => vec![],
         };
         all_events.extend(events);
     }
@@ -89,7 +89,7 @@ pub async fn osint_scan(req: ScanRequest) -> Result<Vec<osint::OsintEvent>, Stri
     Ok(all_events)
 }
 
-// ── SINGLE MODULE ─────────────────────────────────────────────────────────────
+// ── SINGLE MODULE ────────────────────────────────────────────────────────────
 #[derive(Debug, Deserialize)]
 pub struct ModuleRequest {
     pub module: String,
@@ -117,8 +117,7 @@ pub async fn osint_module(req: ModuleRequest) -> Result<Vec<osint::OsintEvent>, 
             let findings = req.findings.as_deref().unwrap_or(&empty);
             osint::run_ai(target, findings, key).await
         }
-        _ => vec![osint::OsintEvent::new("error", "error",
-            format!("Неизвестный модуль: {}", req.module))],
+        _ => vec![osint::OsintEvent::new("error", "error", format!("Неизвестный модуль: {}", req.module))],
     };
     Ok(events)
 }

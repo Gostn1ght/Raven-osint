@@ -1,5 +1,8 @@
 [workspace]
-members = ["ravens-client/src-tauri"]
+members = [
+    "ravens-client/src-tauri",
+    "ravens-server",
+]
 resolver = "2"
 
 [workspace.package]

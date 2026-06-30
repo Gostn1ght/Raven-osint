@@ -1,535 +1,812 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ravens Nexus — Admin</title>
-  <style>
-    :root{
-      --bg:#0a0b0f;--panel:#111318;--panel2:#0d0e13;--border:#1e2130;
-      --text:#e5e7eb;--muted:#6b7280;--accent:#c0392b;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--info:#3b82f6;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;background:radial-gradient(1000px 700px at 70% 20%, rgba(192,57,43,.10), transparent 55%), var(--bg); color:var(--text); font-family:var(--sans);}
-    a{color:var(--info);text-decoration:none} a:hover{text-decoration:underline}
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ravens Nexus — Admin</title>
+<style>
+:root {
+  --accent: #7c3aed;
+  --bg: #0a0a0f;
+  --surface: #13131a;
+  --surface2: #1a1a25;
+  --text: #e2e8f0;
+  --dim: #64748b;
+  --green: #4ade80;
+  --red: #f87171;
+  --yellow: #fbbf24;
+  --border: rgba(255,255,255,0.07);
+  --font: 'JetBrains Mono', 'Fira Code', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; min-height: 100vh; }
+a { color: var(--accent); text-decoration: none; }
 
-    .topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:12px;padding:10px 14px;background:rgba(13,14,19,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
-    .brand{display:flex;align-items:center;gap:10px}
-    .logo{width:34px;height:34px;border-radius:10px;background:var(--accent);box-shadow:0 0 18px rgba(192,57,43,.35);display:grid;place-items:center;font-weight:900;font-family:var(--mono);letter-spacing:1px}
-    .brand h1{margin:0;font-size:12px;letter-spacing:4px;font-family:var(--mono)}
-    .brand .sub{font-size:9px;color:var(--muted);font-family:var(--mono);letter-spacing:2px}
+/* Layout */
+.app { display: flex; height: 100vh; overflow: hidden; }
+.sidebar {
+  width: 220px; flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 0;
+}
+.main { flex: 1; overflow-y: auto; }
+.main::-webkit-scrollbar { width: 4px; }
+.main::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
 
-    .pill{padding:4px 8px;border:1px solid var(--border);border-radius:999px;font-size:10px;font-family:var(--mono);color:var(--muted)}
-    .pill.ok{border-color:rgba(34,197,94,.35);color:var(--ok)}
-    .pill.err{border-color:rgba(239,68,68,.35);color:var(--err)}
+/* Sidebar */
+.sidebar-logo {
+  padding: 20px 16px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-text { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: 3px; }
+.logo-sub { font-size: 9px; color: var(--dim); margin-top: 2px; letter-spacing: 2px; }
 
-    .wrap{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 56px)}
-    .nav{border-right:1px solid var(--border);background:rgba(13,14,19,.85);padding:12px}
-    .nav button{width:100%;text-align:left;background:transparent;border:1px solid transparent;color:var(--muted);padding:10px 10px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center}
-    .nav button:hover{background:var(--panel);color:var(--text);border-color:var(--border)}
-    .nav button.active{background:rgba(192,57,43,.08);border-color:rgba(192,57,43,.35);color:var(--text)}
+.nav-section { padding: 12px 8px 4px; font-size: 9px; color: var(--dim); letter-spacing: 2px; padding-left: 16px; }
+.nav-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 16px;
+  border: none; background: transparent;
+  color: var(--dim); cursor: pointer;
+  font-family: var(--font); font-size: 11px;
+  text-align: left; transition: all 0.15s;
+  border-left: 2px solid transparent;
+}
+.nav-btn:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.nav-btn.active { color: var(--accent); background: rgba(124,58,237,0.1); border-left-color: var(--accent); }
+.nav-icon { font-size: 14px; }
 
-    .main{padding:16px;overflow:auto}
-    .card{background:rgba(17,19,24,.92);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
-    .card .hd{padding:14px 14px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .card .hd h2{margin:0;font-size:12px;font-family:var(--mono);letter-spacing:2px}
-    .card .bd{padding:14px}
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--dim);
+}
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-    .row{display:flex;gap:10px;flex-wrap:wrap}
-    .field{display:flex;flex-direction:column;gap:6px;min-width:220px;flex:1}
-    label{font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:1px}
-    input,select,textarea{background:#0d0e13;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 10px;font-family:var(--mono);font-size:11px;outline:none}
-    input:focus,select:focus,textarea:focus{border-color:rgba(192,57,43,.6);box-shadow:0 0 0 3px rgba(192,57,43,.12)}
-    textarea{min-height:90px;resize:vertical}
+/* Content area */
+.page { padding: 24px; display: none; }
+.page.active { display: block; }
 
-    .btn{border:none;border-radius:12px;padding:10px 12px;font-family:var(--mono);font-size:11px;letter-spacing:1px;cursor:pointer;color:white;background:var(--accent);box-shadow:0 0 18px rgba(192,57,43,.25)}
-    .btn.secondary{background:transparent;border:1px solid var(--border);color:var(--muted);box-shadow:none}
-    .btn.danger{background:var(--err)}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
+.page-header { margin-bottom: 20px; }
+.page-title { font-size: 14px; letter-spacing: 3px; color: var(--accent); margin-bottom: 4px; }
+.page-sub { font-size: 10px; color: var(--dim); }
 
-    table{width:100%;border-collapse:separate;border-spacing:0 8px}
-    th{font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:1px;text-align:left;padding:0 10px}
-    td{background:#0d0e13;border:1px solid var(--border);padding:10px;border-left:none;border-right:none;font-family:var(--mono);font-size:11px}
-    tr td:first-child{border-left:1px solid var(--border);border-top-left-radius:12px;border-bottom-left-radius:12px}
-    tr td:last-child{border-right:1px solid var(--border);border-top-right-radius:12px;border-bottom-right-radius:12px}
+/* Stats grid */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px;
+  transition: border-color 0.2s;
+}
+.stat-card:hover { border-color: var(--accent); }
+.stat-val { font-size: 28px; font-weight: 700; color: var(--accent); }
+.stat-label { font-size: 10px; color: var(--dim); margin-top: 4px; letter-spacing: 1px; }
 
-    .k{color:var(--muted)}
-    .tag{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:3px 8px;font-size:10px;color:var(--muted)}
-    .tag .dot{width:6px;height:6px;border-radius:50%}
+/* Cards / panels */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px;
+  margin-bottom: 16px;
+}
+.card-title { font-size: 11px; letter-spacing: 2px; color: var(--accent); margin-bottom: 12px; }
 
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    @media (max-width: 980px){ .wrap{grid-template-columns:1fr} .nav{position:sticky;top:56px;display:flex;gap:8px;overflow:auto} .nav button{min-width:190px} .grid2{grid-template-columns:1fr} }
+/* Forms */
+.form-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.label { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+.input, .select, .textarea {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text); padding: 7px 10px;
+  border-radius: 6px; font-family: var(--font); font-size: 12px;
+  outline: none; transition: border-color 0.2s;
+}
+.input:focus, .select:focus, .textarea:focus { border-color: var(--accent); }
+.select { cursor: pointer; }
+.textarea { resize: vertical; min-height: 80px; }
+.input-lg { min-width: 240px; }
 
-    .toast{position:fixed;right:14px;bottom:14px;background:#0d0e13;border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-family:var(--mono);font-size:11px;max-width:360px;box-shadow:0 18px 50px rgba(0,0,0,.5);display:none}
-    .toast.show{display:block}
-    .muted{color:var(--muted)}
+/* Buttons */
+.btn {
+  padding: 7px 14px;
+  border: 1px solid var(--accent); background: transparent;
+  color: var(--accent); cursor: pointer;
+  font-family: var(--font); font-size: 11px;
+  border-radius: 6px; letter-spacing: 1px;
+  transition: all 0.2s; white-space: nowrap;
+}
+.btn:hover { background: var(--accent); color: #000; }
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: var(--red); color: #fff; }
+.btn-warning { border-color: var(--yellow); color: var(--yellow); }
+.btn-warning:hover { background: var(--yellow); color: #000; }
+.btn-sm { padding: 4px 10px; font-size: 10px; }
+.btn-xs { padding: 2px 8px; font-size: 10px; }
 
-    /* Signature: subtle scanline */
-    .scanlines:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(rgba(255,255,255,.04), transparent 2px);background-size:100% 3px;mix-blend-mode:overlay;opacity:.07;}
-  </style>
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th { text-align: left; padding: 8px 10px; font-size: 9px; letter-spacing: 2px; color: var(--dim); border-bottom: 1px solid var(--border); }
+td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+.mono { font-family: var(--font); font-size: 10px; }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 20px;
+  font-size: 9px; letter-spacing: 1px; font-weight: 700;
+}
+.badge-free { background: rgba(100,116,139,0.2); color: var(--dim); }
+.badge-pro { background: rgba(59,130,246,0.2); color: #60a5fa; }
+.badge-elite { background: rgba(124,58,237,0.2); color: #a78bfa; }
+.badge-admin { background: rgba(220,38,38,0.2); color: var(--red); }
+.badge-active { background: rgba(74,222,128,0.15); color: var(--green); }
+.badge-banned { background: rgba(248,113,113,0.15); color: var(--red); }
+.badge-inactive { background: rgba(100,116,139,0.15); color: var(--dim); }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: 24px; right: 24px;
+  padding: 10px 18px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--accent);
+  font-size: 12px; color: var(--text);
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.3s; z-index: 1000;
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+#toast.err { border-color: var(--red); }
+
+/* Login overlay */
+#login-overlay {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 500;
+}
+.login-box {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 16px; padding: 32px 28px;
+  width: 340px;
+}
+.login-title { font-size: 16px; color: var(--accent); letter-spacing: 3px; margin-bottom: 4px; }
+.login-sub { font-size: 10px; color: var(--dim); margin-bottom: 20px; }
+
+/* Media preview */
+.media-preview { width: 100%; max-height: 160px; object-fit: cover; border-radius: 8px; margin-top: 8px; }
+.media-thumb { width: 60px; height: 40px; object-fit: cover; border-radius: 4px; }
+
+/* Toggle */
+.toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 11px; color: var(--dim); }
+.toggle input { accent-color: var(--accent); cursor: pointer; }
+
+/* Session status dot */
+.sess-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.sess-dot.active { background: var(--green); }
+.sess-dot.banned { background: var(--red); }
+
+/* Divider */
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+/* Responsive */
+@media (max-width: 700px) {
+  .sidebar { width: 56px; }
+  .sidebar .nav-btn span:last-child, .logo-sub, .logo-text + *, .sidebar-footer { display: none; }
+  .nav-icon { font-size: 18px; }
+}
+</style>
 </head>
-<body class="scanlines">
-  <div class="topbar">
-    <div class="brand">
-      <div class="logo">R</div>
-      <div>
-        <h1>RAVENS NEXUS</h1>
-        <div class="sub">LICENSE SERVER · ADMIN CONSOLE</div>
-      </div>
+<body>
+
+<div id="toast"></div>
+
+<!-- Login Overlay -->
+<div id="login-overlay">
+  <div class="login-box">
+    <div class="login-title">⬡ RAVENS NEXUS</div>
+    <div class="login-sub">ADMIN CONSOLE · Введите секрет администратора</div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="label">ADMIN SECRET</label>
+      <input class="input" type="password" id="secret-input" placeholder="Секрет..." style="width:100%"
+        onkeydown="if(event.key==='Enter')doLogin()" />
     </div>
-    <div class="pill" id="healthPill">HEALTH: —</div>
-    <div style="flex:1"></div>
-    <div class="pill" id="authPill">AUTH: —</div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Войти</button>
+    <div id="login-err" style="font-size:10px;color:var(--red);margin-top:8px;display:none">✗ Неверный секрет</div>
+  </div>
+</div>
+
+<div class="app" style="display:none" id="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-text">⬡ RAVENS</div>
+      <div class="logo-sub">NEXUS · ADMIN</div>
+    </div>
+
+    <div class="nav-section">ОСНОВНОЕ</div>
+    <button class="nav-btn active" onclick="showPage('dashboard')" data-page="dashboard">
+      <span class="nav-icon">◈</span><span>Dashboard</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('sessions')" data-page="sessions">
+      <span class="nav-icon">⬡</span><span>Сессии</span>
+    </button>
+
+    <div class="nav-section">ЛИЦЕНЗИИ</div>
+    <button class="nav-btn" onclick="showPage('tokens')" data-page="tokens">
+      <span class="nav-icon">◎</span><span>Токены</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('create-token')" data-page="create-token">
+      <span class="nav-icon">+</span><span>Создать токен</span>
+    </button>
+
+    <div class="nav-section">КОНТЕНТ</div>
+    <button class="nav-btn" onclick="showPage('news')" data-page="news">
+      <span class="nav-icon">📰</span><span>Новости</span>
+    </button>
+    <button class="nav-btn" onclick="showPage('create-news')" data-page="create-news">
+      <span class="nav-icon">✏</span><span>Добавить новость</span>
+    </button>
+
+    <div class="sidebar-footer">
+      <div><span class="status-dot"></span>ONLINE</div>
+      <div style="margin-top:4px;font-size:9px" id="server-url-display">—</div>
+    </div>
   </div>
 
-  <div class="wrap">
-    <div class="nav">
-      <button data-view="dashboard" class="active">⬡ DASHBOARD <span class="muted">/ RU+EN</span></button>
-      <button data-view="tokens">⬡ TOKENS <span class="muted">/ Создать</span></button>
-      <button data-view="users">⬡ USERS <span class="muted">/ Бан</span></button>
-      <button data-view="plans">⬡ PLANS <span class="muted">/ Лимиты</span></button>
-      <button data-view="audit">⬡ AUDIT <span class="muted">/ Логи</span></button>
-      <button data-view="settings">⬡ SETTINGS <span class="muted">/ Admin</span></button>
+  <!-- Main -->
+  <div class="main">
+
+    <!-- ── DASHBOARD ─────────────────────────────────────────────── -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-header">
+        <div class="page-title">◈ DASHBOARD</div>
+        <div class="page-sub">Общая статистика системы</div>
+      </div>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card"><div class="stat-val" id="st-total">—</div><div class="stat-label">ВСЕГО ТОКЕНОВ</div></div>
+        <div class="stat-card"><div class="stat-val" id="st-active">—</div><div class="stat-label">АКТИВНЫХ</div></div>
+        <div class="stat-card"><div class="stat-val" id="st-sessions">—</div><div class="stat-label">АКТИВНЫХ СЕССИЙ</div></div>
+        <div class="stat-card"><div class="stat-val" id="st-banned">—</div><div class="stat-label">ЗАБАНЕНО HWID</div></div>
+        <div class="stat-card"><div class="stat-val" id="st-news">—</div><div class="stat-label">НОВОСТЕЙ</div></div>
+        <div class="stat-card"><div class="stat-val" id="st-free">—</div><div class="stat-label">FREE</div></div>
+        <div class="stat-card"><div class="stat-val" id="st-pro">—</div><div class="stat-label">PRO</div></div>
+        <div class="stat-card"><div class="stat-val" id="st-elite">—</div><div class="stat-label">ELITE</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">БЫСТРЫЕ ДЕЙСТВИЯ</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" onclick="showPage('sessions')">⬡ Активные сессии</button>
+          <button class="btn" onclick="showPage('tokens')">◎ Все токены</button>
+          <button class="btn" onclick="showPage('create-news')">✏ Новая новость</button>
+          <button class="btn" onclick="loadStats()">↻ Обновить</button>
+        </div>
+      </div>
     </div>
 
-    <div class="main">
-      <!-- Login overlay -->
-      <div class="card" id="loginCard" style="max-width:520px;margin:0 auto;display:none">
-        <div class="hd"><h2>ADMIN LOGIN</h2><span class="pill">LOCAL</span></div>
-        <div class="bd">
-          <div class="row">
-            <div class="field">
-              <label>Admin Secret</label>
-              <input id="adminSecret" placeholder="RAVENS_ADMIN_SECRET_CHANGE_ME" />
-              <div class="muted" style="font-size:11px">RU: Секрет нужен только админам. Не выдавай клиентам.</div>
-              <div class="muted" style="font-size:11px">EN: Secret is admin-only. Never ship to clients.</div>
-            </div>
+    <!-- ── SESSIONS ───────────────────────────────────────────────── -->
+    <div class="page" id="page-sessions">
+      <div class="page-header">
+        <div class="page-title">⬡ АКТИВНЫЕ СЕССИИ</div>
+        <div class="page-sub">Онлайн-устройства · Управление доступом по железу</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn" onclick="loadSessions()">↻ Обновить</button>
+        <input class="input" id="sess-filter" placeholder="Фильтр по токену / IP / HWID..." style="flex:1"
+          oninput="filterSessions()" />
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>ТОКЕН</th>
+                <th>IP</th>
+                <th>HWID</th>
+                <th>ВЕРСИЯ</th>
+                <th>LAST SEEN</th>
+                <th>СТАТУС</th>
+                <th>ДЕЙСТВИЯ</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-tbody">
+              <tr><td colspan="8" style="text-align:center;color:var(--dim);padding:24px">Загрузка...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TOKENS ─────────────────────────────────────────────────── -->
+    <div class="page" id="page-tokens">
+      <div class="page-header">
+        <div class="page-title">◎ ТОКЕНЫ ЛИЦЕНЗИЙ</div>
+        <div class="page-sub">Управление токенами · Привязка HWID</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn" onclick="loadTokens()">↻ Обновить</button>
+        <input class="input" id="token-filter" placeholder="Поиск по токену / заметке..." style="flex:1"
+          oninput="filterTokens()" />
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ТОКЕН</th>
+                <th>ТАРИФ</th>
+                <th>HWID</th>
+                <th>ЗАПРОСЫ</th>
+                <th>ИСТЕКАЕТ</th>
+                <th>СТАТУС</th>
+                <th>ЗАМЕТКА</th>
+                <th>ДЕЙСТВИЯ</th>
+              </tr>
+            </thead>
+            <tbody id="tokens-tbody">
+              <tr><td colspan="8" style="text-align:center;color:var(--dim);padding:24px">Загрузка...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CREATE TOKEN ───────────────────────────────────────────── -->
+    <div class="page" id="page-create-token">
+      <div class="page-header">
+        <div class="page-title">+ СОЗДАТЬ ТОКЕН</div>
+        <div class="page-sub">Выдать новую лицензию</div>
+      </div>
+      <div class="card" style="max-width:480px">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label">ТАРИФ</label>
+            <select class="select" id="ct-tier">
+              <option value="free">FREE</option>
+              <option value="pro">PRO</option>
+              <option value="elite">ELITE</option>
+              <option value="admin">ADMIN</option>
+            </select>
           </div>
-          <div style="margin-top:12px" class="row">
-            <button class="btn" id="btnLogin">Login</button>
-            <button class="btn secondary" id="btnLoginDemo">Use demo</button>
+          <div class="form-group">
+            <label class="label">СРОК (дней, пусто = ∞)</label>
+            <input class="input" type="number" id="ct-days" placeholder="30" min="1" />
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label class="label">ЗАМЕТКА</label>
+          <input class="input input-lg" id="ct-note" placeholder="Имя клиента, назначение..." />
+        </div>
+        <button class="btn btn-primary" onclick="createToken()">Создать токен</button>
+        <div id="ct-result" style="margin-top:12px;font-size:11px;display:none"></div>
+      </div>
+    </div>
+
+    <!-- ── NEWS LIST ──────────────────────────────────────────────── -->
+    <div class="page" id="page-news">
+      <div class="page-header">
+        <div class="page-title">📰 НОВОСТИ</div>
+        <div class="page-sub">Управление публикациями</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn" onclick="loadNews()">↻ Обновить</button>
+        <button class="btn btn-primary" onclick="showPage('create-news')">+ Добавить</button>
+      </div>
+      <div id="news-list-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
+        <div style="color:var(--dim);padding:24px">Загрузка...</div>
+      </div>
+    </div>
+
+    <!-- ── CREATE NEWS ────────────────────────────────────────────── -->
+    <div class="page" id="page-create-news">
+      <div class="page-header">
+        <div class="page-title">✏ ДОБАВИТЬ НОВОСТЬ</div>
+        <div class="page-sub">Публикация анонса / обновления</div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <!-- Form -->
+        <div class="card" style="flex:1;min-width:320px">
+          <div class="card-title">СОДЕРЖАНИЕ</div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="label">ЗАГОЛОВОК</label>
+            <input class="input input-lg" id="cn-title" placeholder="Заголовок новости..." />
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="label">ПРЕВЬЮ (отображается на карточке)</label>
+            <textarea class="textarea" id="cn-preview" placeholder="Краткое описание..." style="min-height:60px"></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="label">ПОЛНЫЙ ТЕКСТ (открывается в карточке)</label>
+            <textarea class="textarea" id="cn-text" placeholder="Полный текст новости..." style="min-height:120px"></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="label">АВТОР</label>
+            <input class="input" id="cn-author" placeholder="Ravens Team" value="Admin" />
+          </div>
+          <label class="toggle" style="margin-bottom:10px">
+            <input type="checkbox" id="cn-published" checked /> Опубликовать сразу
+          </label>
+          <button class="btn btn-primary" onclick="createNews()" style="width:100%">Опубликовать</button>
+          <div id="cn-result" style="margin-top:8px;font-size:11px;display:none"></div>
+        </div>
+
+        <!-- Media settings -->
+        <div class="card" style="width:280px;flex-shrink:0">
+          <div class="card-title">МЕДИА</div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="label">URL КАРТИНКИ</label>
+            <input class="input" id="cn-image" placeholder="https://..." oninput="previewMedia()" />
+          </div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="label">URL ВИДЕО (MP4 / YouTube)</label>
+            <input class="input" id="cn-video" placeholder="https://..." />
+          </div>
+
+          <div class="divider"></div>
+          <div class="card-title">ОФОРМЛЕНИЕ МЕДИА</div>
+
+          <div class="form-group" style="margin-bottom:10px">
+            <label class="label">ПОЛОЖЕНИЕ</label>
+            <select class="select" id="cn-position" style="width:100%">
+              <option value="top">Сверху (как баннер)</option>
+              <option value="left">Слева</option>
+              <option value="right">Справа</option>
+              <option value="center">По центру</option>
+            </select>
+          </div>
+
+          <label class="toggle" style="margin-bottom:10px">
+            <input type="checkbox" id="cn-rounded" checked /> Скруглённые углы (как баннер в DC)
+          </label>
+
+          <div class="divider"></div>
+          <div class="card-title">ПРЕДПРОСМОТР</div>
+          <div id="media-preview-wrap">
+            <div style="color:var(--dim);font-size:10px">Введите URL картинки для предпросмотра</div>
           </div>
         </div>
       </div>
-
-      <!-- Views -->
-      <div id="viewRoot"></div>
     </div>
-  </div>
 
-  <div class="toast" id="toast"></div>
+  </div><!-- /main -->
+</div><!-- /app -->
 
 <script>
-  const state = {
-    view: 'dashboard',
-    adminSecret: '',
-    baseUrl: location.origin,
-    plans: [
-      {id:'free', name:'FREE', requests:50, modules:['social','hibp','ip','whois','dorks'], ai:false, price:'0₽'},
-      {id:'pro', name:'PRO', requests:1000, modules:['social','hibp','ip','whois','dorks','paste','darkweb','phone','intelx','ai'], ai:true, price:'990₽'},
-      {id:'elite', name:'ELITE', requests:-1, modules:['*'], ai:true, price:'2990₽'},
-    ],
-    users: [],
-    tokens: [],
-    audit: [],
-  };
+// ── State ─────────────────────────────────────────────────────────────────────
+let adminSecret = '';
+let serverUrl = '';
+let allSessions = [];
+let allTokens = [];
 
-  const $ = (sel, el=document) => el.querySelector(sel);
-  const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function toast(msg, err = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (err ? ' err' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = '', 3000);
+}
 
-  function toast(msg){
-    const t = $('#toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(()=>t.classList.remove('show'), 2200);
-  }
+function headers() {
+  return { 'Content-Type': 'application/json', 'x-admin-secret': adminSecret };
+}
 
-  async function api(path, opts={}){
-    const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
-    if (state.adminSecret) headers['x-admin-secret'] = state.adminSecret;
-    const res = await fetch(state.baseUrl + path, Object.assign({}, opts, {headers}));
-    let data = null;
-    try{ data = await res.json(); } catch { data = null; }
-    if (!res.ok) throw new Error((data && data.error) ? data.error : `HTTP ${res.status}`);
-    return data;
-  }
+async function api(method, path, body) {
+  const res = await fetch(serverUrl + path, {
+    method, headers: headers(),
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
 
-  function setAuthPill(){
-    const pill = $('#authPill');
-    if (state.adminSecret){
-      pill.textContent = 'AUTH: OK';
-      pill.className = 'pill ok';
-    } else {
-      pill.textContent = 'AUTH: REQUIRED';
-      pill.className = 'pill err';
-    }
-  }
+function tierBadge(tier) {
+  const cls = { FREE: 'badge-free', PRO: 'badge-pro', ELITE: 'badge-elite', ADMIN: 'badge-admin' };
+  return `<span class="badge ${cls[tier] || 'badge-free'}">${tier}</span>`;
+}
 
-  async function refreshHealth(){
-    try{
-      const d = await api('/health', {headers:{}});
-      $('#healthPill').textContent = 'HEALTH: OK';
-      $('#healthPill').className = 'pill ok';
-    }catch(e){
-      $('#healthPill').textContent = 'HEALTH: DOWN';
-      $('#healthPill').className = 'pill err';
-    }
-  }
+function statusBadge(active, hwid_banned) {
+  if (hwid_banned) return `<span class="badge badge-banned">HWID BAN</span>`;
+  if (active) return `<span class="badge badge-active">ACTIVE</span>`;
+  return `<span class="badge badge-inactive">REVOKED</span>`;
+}
 
-  function navInit(){
-    $$('.nav button').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        $$('.nav button').forEach(b=>b.classList.remove('active'));
-        btn.classList.add('active');
-        state.view = btn.dataset.view;
-        render();
-      });
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const sec = Math.floor((Date.now() - d) / 1000);
+  if (sec < 60) return sec + 'с назад';
+  if (sec < 3600) return Math.floor(sec/60) + 'м назад';
+  if (sec < 86400) return Math.floor(sec/3600) + 'ч назад';
+  return d.toLocaleDateString('ru-RU');
+}
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+function doLogin() {
+  const urlInput = document.getElementById('secret-input');
+  // The secret input is actually just the secret, server URL comes from the page URL
+  serverUrl = window.location.origin;
+  adminSecret = urlInput.value.trim();
+  if (!adminSecret) return;
+
+  fetch(serverUrl + '/admin/stats', { headers: { 'x-admin-secret': adminSecret } })
+    .then(r => {
+      if (r.ok) {
+        document.getElementById('login-overlay').style.display = 'none';
+        document.getElementById('app').style.display = 'flex';
+        document.getElementById('server-url-display').textContent = serverUrl;
+        loadAll();
+      } else {
+        document.getElementById('login-err').style.display = 'block';
+      }
+    })
+    .catch(() => {
+      document.getElementById('login-err').textContent = '✗ Сервер недоступен';
+      document.getElementById('login-err').style.display = 'block';
     });
-  }
+}
 
-  function requireAuth(){
-    if (!state.adminSecret){
-      $('#loginCard').style.display = 'block';
-      $('#viewRoot').innerHTML = '';
-      return true;
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelector(`[data-page="${id}"]`)?.classList.add('active');
+
+  if (id === 'sessions') loadSessions();
+  if (id === 'tokens') loadTokens();
+  if (id === 'news') loadNews();
+  if (id === 'dashboard') loadStats();
+}
+
+function loadAll() {
+  loadStats();
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const d = await api('GET', '/admin/stats');
+    document.getElementById('st-total').textContent = d.total_tokens ?? '—';
+    document.getElementById('st-active').textContent = d.active_tokens ?? '—';
+    document.getElementById('st-sessions').textContent = d.active_sessions ?? '—';
+    document.getElementById('st-banned').textContent = d.banned_hwids ?? '—';
+    document.getElementById('st-news').textContent = d.news_count ?? '—';
+    document.getElementById('st-free').textContent = d.by_tier?.FREE ?? 0;
+    document.getElementById('st-pro').textContent = d.by_tier?.PRO ?? 0;
+    document.getElementById('st-elite').textContent = d.by_tier?.ELITE ?? 0;
+  } catch { toast('Ошибка загрузки статистики', true); }
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+async function loadSessions() {
+  try {
+    allSessions = await api('GET', '/admin/sessions');
+    renderSessions(allSessions);
+  } catch { toast('Ошибка загрузки сессий', true); }
+}
+
+function renderSessions(list) {
+  const tbody = document.getElementById('sessions-tbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:24px">Нет активных сессий</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(s => `
+    <tr>
+      <td><span class="sess-dot ${s.banned ? 'banned' : 'active'}"></span></td>
+      <td class="mono">${s.token.substring(0,20)}...</td>
+      <td class="mono">${s.ip}</td>
+      <td class="mono" title="${s.hwid}">${s.hwid.substring(0,12)}...</td>
+      <td>${s.app_version}</td>
+      <td>${timeAgo(s.last_seen)}</td>
+      <td>${s.banned ? '<span class="badge badge-banned">BANNED</span>' : '<span class="badge badge-active">ONLINE</span>'}</td>
+      <td>
+        ${!s.banned ? `
+          <button class="btn btn-xs btn-warning" onclick="banSession('${s.id}', false)">Бан сессии</button>
+          <button class="btn btn-xs btn-danger" style="margin-left:4px" onclick="banSession('${s.id}', true)">Бан HWID</button>
+        ` : `<span style="color:var(--dim);font-size:10px">Заблокирован</span>`}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterSessions() {
+  const q = document.getElementById('sess-filter').value.toLowerCase();
+  const filtered = allSessions.filter(s =>
+    s.token.toLowerCase().includes(q) ||
+    s.ip.toLowerCase().includes(q) ||
+    s.hwid.toLowerCase().includes(q)
+  );
+  renderSessions(filtered);
+}
+
+async function banSession(id, banHwid) {
+  const msg = banHwid
+    ? '⚠ Забанить HWID? Устройство больше не сможет запустить приложение.'
+    : 'Завершить сессию?';
+  if (!confirm(msg)) return;
+  try {
+    const d = await api('POST', `/admin/sessions/${id}/ban`, { ban_hwid: banHwid });
+    if (d.ok) {
+      toast(banHwid ? '⛔ HWID заблокирован' : '✓ Сессия завершена');
+      loadSessions();
+      loadStats();
+    } else toast(d.error || 'Ошибка', true);
+  } catch { toast('Ошибка', true); }
+}
+
+// ── Tokens ────────────────────────────────────────────────────────────────────
+async function loadTokens() {
+  try {
+    allTokens = await api('GET', '/admin/tokens');
+    renderTokens(allTokens);
+  } catch { toast('Ошибка загрузки токенов', true); }
+}
+
+function renderTokens(list) {
+  const tbody = document.getElementById('tokens-tbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:24px">Нет токенов</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(t => `
+    <tr>
+      <td class="mono" style="font-size:10px">${t.token}</td>
+      <td>${tierBadge(t.tier)}</td>
+      <td class="mono" style="font-size:9px" title="${t.hwid || '—'}">${t.hwid ? t.hwid.substring(0,10)+'...' : '<span style="color:var(--dim)">не привязан</span>'}</td>
+      <td>${t.requests_used} / ${t.requests_limit === -1 ? '∞' : t.requests_limit}</td>
+      <td>${t.expires_at ? new Date(t.expires_at).toLocaleDateString('ru-RU') : '∞'}</td>
+      <td>${statusBadge(t.active, t.hwid_banned)}</td>
+      <td style="color:var(--dim);font-size:10px">${t.note || '—'}</td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap">
+        <select class="select" style="font-size:9px;padding:2px 4px" onchange="changeTier('${t.token}', this.value)">
+          <option value="">Тариф</option>
+          <option value="free">FREE</option>
+          <option value="pro">PRO</option>
+          <option value="elite">ELITE</option>
+          <option value="admin">ADMIN</option>
+        </select>
+        <button class="btn btn-xs" onclick="resetRequests('${t.token}')">↻ Сбросить</button>
+        <button class="btn btn-xs" onclick="promptRebindHwid('${t.token}')">🔗 HWID</button>
+        ${t.active ? `<button class="btn btn-xs btn-danger" onclick="revokeToken('${t.token}')">✕ Отозвать</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterTokens() {
+  const q = document.getElementById('token-filter').value.toLowerCase();
+  const filtered = allTokens.filter(t =>
+    t.token.toLowerCase().includes(q) ||
+    (t.note || '').toLowerCase().includes(q)
+  );
+  renderTokens(filtered);
+}
+
+async function createToken() {
+  const tier = document.getElementById('ct-tier').value;
+  const days = document.getElementById('ct-days').value;
+  const note = document.getElementById('ct-note').value;
+  try {
+    const d = await api('POST', '/admin/tokens', {
+      tier, note,
+      expires_days: days ? parseInt(days) : null,
+    });
+    const el = document.getElementById('ct-result');
+    el.style.display = 'block';
+    el.style.color = 'var(--green)';
+    el.innerHTML = `✓ Токен создан:<br><strong style="color:var(--accent)">${d.token}</strong><br>Тариф: ${d.tier}`;
+    toast('✓ Токен создан');
+  } catch { toast('Ошибка', true); }
+}
+
+async function revokeToken(token) {
+  if (!confirm('Отозвать токен?')) return;
+  const d = await api('DELETE', `/admin/tokens/${token}`);
+  if (d.ok) { toast('✓ Токен отозван'); loadTokens(); } else toast(d.error, true);
+}
+
+async function changeTier(token, tier) {
+  if (!tier) return;
+  const d = await api('PUT', `/admin/tokens/${token}/tier`, { tier });
+  if (d.ok) { toast(`✓ Тариф изменён на ${d.tier}`); loadTokens(); } else toast(d.error, true);
+}
+
+async function resetRequests(token) {
+  const d = await api('POST', `/admin/tokens/${token}/reset-requests`);
+  if (d.ok) { toast('✓ Запросы сброшены'); loadTokens(); } else toast(d.error, true);
+}
+
+async function promptRebindHwid(token) {
+  const newHwid = prompt('Введите новый HWID (оставьте пустым для отвязки):');
+  if (newHwid === null) return;
+  const d = await api('POST', `/admin/tokens/${token}/rebind-hwid`, { new_hwid: newHwid });
+  if (d.ok) { toast('✓ HWID переназначен'); loadTokens(); } else toast(d.error, true);
+}
+
+// ── News ──────────────────────────────────────────────────────────────────────
+async function loadNews() {
+  try {
+    const list = await api('GET', '/admin/news');
+    const grid = document.getElementById('news-list-grid');
+    if (!list.length) {
+      grid.innerHTML = '<div style="color:var(--dim);padding:24px">Нет новостей. <a href="#" onclick="showPage(\'create-news\')">Добавить</a></div>';
+      return;
     }
-    $('#loginCard').style.display = 'none';
-    return false;
-  }
-
-  function fmtInf(n){ return n === -1 ? '∞' : String(n); }
-
-  function renderDashboard(){
-    return `
-      <div class="grid2">
-        <div class="card">
-          <div class="hd"><h2>DASHBOARD</h2><span class="pill">RU+EN</span></div>
-          <div class="bd" id="dashStats">Loading...</div>
-        </div>
-        <div class="card">
-          <div class="hd"><h2>QUICK ACTIONS</h2><span class="pill">TOKENS</span></div>
-          <div class="bd">
-            <div class="row">
-              <button class="btn" id="qaCreatePro">Create PRO token</button>
-              <button class="btn secondary" id="qaRefresh">Refresh</button>
+    grid.innerHTML = list.map(n => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        ${n.image_url ? `<img src="${n.image_url}" style="width:100%;height:140px;object-fit:cover" />` : ''}
+        <div style="padding:12px">
+          <div style="font-size:11px;font-weight:700;margin-bottom:4px">${n.title}</div>
+          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">${n.preview_text.substring(0,80)}...</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="badge ${n.published ? 'badge-active' : 'badge-inactive'}">${n.published ? 'ОПУБЛ.' : 'ЧЕРНОВИК'}</span>
+            <span style="font-size:9px;color:var(--dim)">${n.author}</span>
+            <div style="margin-left:auto;display:flex;gap:4px">
+              <button class="btn btn-xs" onclick="togglePublish('${n.id}', ${!n.published})">${n.published ? 'Скрыть' : 'Опубл.'}</button>
+              <button class="btn btn-xs btn-danger" onclick="deleteNews('${n.id}')">✕</button>
             </div>
-            <div class="muted" style="margin-top:10px">RU: Быстрые действия для админа.</div>
-            <div class="muted">EN: Quick admin shortcuts.</div>
           </div>
         </div>
       </div>
-
-      <div style="height:12px"></div>
-
-      <div class="card">
-        <div class="hd"><h2>RECENT TOKENS</h2><span class="pill">LAST 50</span></div>
-        <div class="bd" id="recentTokens"></div>
-      </div>
-    `;
-  }
-
-  function renderTokens(){
-    return `
-      <div class="card">
-        <div class="hd"><h2>TOKENS</h2><span class="pill">CREATE / REVOKE</span></div>
-        <div class="bd">
-          <div class="row">
-            <div class="field">
-              <label>Tier</label>
-              <select id="tokTier">
-                <option value="free">FREE</option>
-                <option value="pro">PRO</option>
-                <option value="elite">ELITE</option>
-                <option value="admin">ADMIN</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Expires (days) / Срок</label>
-              <input id="tokExp" placeholder="30" />
-            </div>
-            <div class="field" style="flex:2">
-              <label>Note / Комментарий</label>
-              <input id="tokNote" placeholder="customer / invoice / etc" />
-            </div>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <button class="btn" id="btnCreateToken">Create token</button>
-            <button class="btn secondary" id="btnReloadTokens">Reload list</button>
-          </div>
-        </div>
-      </div>
-
-      <div style="height:12px"></div>
-
-      <div class="card">
-        <div class="hd"><h2>ALL TOKENS</h2><span class="pill">{state.tokens.length}</span></div>
-        <div class="bd" id="tokensTable"></div>
-      </div>
-    `;
-  }
-
-  function renderUsers(){
-    return `
-      <div class="card">
-        <div class="hd"><h2>USERS</h2><span class="pill">PLANNED</span></div>
-        <div class="bd">
-          <div class="muted">RU: Пользователи появятся после подключения SQLite и сущности users.</div>
-          <div class="muted">EN: Users will appear after SQLite + users table is implemented.</div>
-          <div style="height:10px"></div>
-          <div class="row">
-            <button class="btn secondary" id="btnUserScaffold">Scaffold users DB</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderPlans(){
-    const rows = state.plans.map(p=>`
-      <tr>
-        <td><b>${p.name}</b></td>
-        <td>${fmtInf(p.requests)}</td>
-        <td>${p.ai ? '✓' : '✗'}</td>
-        <td>${p.price}</td>
-        <td><button class="btn secondary" data-edit-plan="${p.id}">Edit</button></td>
-      </tr>
     `).join('');
-    return `
-      <div class="card">
-        <div class="hd"><h2>PLANS</h2><span class="pill">LOCAL CONFIG</span></div>
-        <div class="bd">
-          <table>
-            <thead><tr><th>Plan</th><th>Requests</th><th>AI</th><th>Price</th><th>Action</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-          <div class="muted">RU: Сейчас планы в UI локальные (демо). На следующем шаге вынесем в SQLite и API.</div>
-          <div class="muted">EN: Plans are local demo. Next step: store in SQLite + API.</div>
-        </div>
-      </div>
-    `;
-  }
+  } catch { toast('Ошибка загрузки новостей', true); }
+}
 
-  function renderAudit(){
-    return `
-      <div class="card">
-        <div class="hd"><h2>AUDIT LOG</h2><span class="pill">PLANNED</span></div>
-        <div class="bd">
-          <div class="muted">RU: Логи появятся после добавления записи событий (activate/consume/admin) в SQLite.</div>
-          <div class="muted">EN: Logs after writing events to SQLite.</div>
-          <div style="height:10px"></div>
-          <button class="btn secondary" id="btnAuditScaffold">Scaffold audit DB</button>
-        </div>
-      </div>
-    `;
-  }
+async function createNews() {
+  const title = document.getElementById('cn-title').value.trim();
+  const preview = document.getElementById('cn-preview').value.trim();
+  const text = document.getElementById('cn-text').value.trim();
+  const author = document.getElementById('cn-author').value.trim() || 'Admin';
+  const image_url = document.getElementById('cn-image').value.trim() || null;
+  const video_url = document.getElementById('cn-video').value.trim() || null;
+  const media_position = document.getElementById('cn-position').value;
+  const media_rounded = document.getElementById('cn-rounded').checked;
+  const published = document.getElementById('cn-published').checked;
 
-  function renderSettings(){
-    return `
-      <div class="card">
-        <div class="hd"><h2>SETTINGS</h2><span class="pill">ADMIN</span></div>
-        <div class="bd">
-          <div class="row">
-            <div class="field">
-              <label>Base URL</label>
-              <input id="baseUrl" value="${state.baseUrl}" />
-            </div>
-            <div class="field">
-              <label>Admin Secret</label>
-              <input id="adminSecret2" value="${state.adminSecret}" placeholder="x-admin-secret" />
-            </div>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <button class="btn" id="btnSaveSettings">Save</button>
-            <button class="btn secondary" id="btnLogout">Logout</button>
-          </div>
-          <div class="muted" style="margin-top:10px">RU: Это локальные настройки браузера (localStorage).</div>
-          <div class="muted">EN: Stored locally in browser (localStorage).</div>
-        </div>
-      </div>
-    `;
-  }
+  if (!title || !preview || !text) { toast('Заполните обязательные поля', true); return; }
 
-  function render(){
-    setAuthPill();
-    if (requireAuth()) return;
-
-    const root = $('#viewRoot');
-    if (state.view === 'dashboard') root.innerHTML = renderDashboard();
-    if (state.view === 'tokens') root.innerHTML = renderTokens();
-    if (state.view === 'users') root.innerHTML = renderUsers();
-    if (state.view === 'plans') root.innerHTML = renderPlans();
-    if (state.view === 'audit') root.innerHTML = renderAudit();
-    if (state.view === 'settings') root.innerHTML = renderSettings();
-
-    bindView();
-  }
-
-  async function loadTokens(){
-    state.tokens = await api('/admin/tokens');
-  }
-
-  function tokensTableHtml(){
-    const rows = state.tokens
-      .sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''))
-      .slice(0, 200)
-      .map(t=>{
-        const tierColor = t.tier === 'ADMIN' ? 'var(--warn)' : t.tier === 'ELITE' ? 'var(--accent)' : t.tier === 'PRO' ? 'var(--info)' : 'var(--muted)';
-        const activeDot = t.active ? 'var(--ok)' : 'var(--err)';
-        const rem = t.requests_limit === -1 ? '∞' : t.requests_remaining;
-        return `
-          <tr>
-            <td><span class="tag"><span class="dot" style="background:${activeDot}"></span>${t.token}</span></td>
-            <td><span style="color:${tierColor}"><b>${t.tier}</b></span></td>
-            <td class="k">${t.hwid ? t.hwid.slice(0,10)+'…' : '—'}</td>
-            <td>${rem}</td>
-            <td class="k">${t.expires_at ? t.expires_at.slice(0,10) : '∞'}</td>
-            <td>
-              <button class="btn secondary" data-copy="${t.token}">Copy</button>
-              <button class="btn danger" data-revoke="${t.token}">Revoke</button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-
-    return `
-      <table>
-        <thead>
-          <tr>
-            <th>Token</th><th>Tier</th><th>HWID</th><th>Remaining</th><th>Expires</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="muted">RU: Token привязывается к HWID при первой активации. Revoke отключает токен.</div>
-      <div class="muted">EN: Token binds to HWID on first activation. Revoke disables token.</div>
-    `;
-  }
-
-  async function bindDashboard(){
-    try{
-      const stats = await api('/admin/stats');
-      $('#dashStats').innerHTML = `
-        <div class="row">
-          <div class="field"><label>Total tokens</label><div style="font-family:var(--mono);font-size:18px">${stats.total_tokens}</div></div>
-          <div class="field"><label>Active tokens</label><div style="font-family:var(--mono);font-size:18px;color:var(--ok)">${stats.active_tokens}</div></div>
-          <div class="field"><label>By tier</label><div style="font-family:var(--mono);font-size:11px;color:var(--muted)">${Object.entries(stats.by_tier).map(([k,v])=>`${k}:${v}`).join(' · ')}</div></div>
-        </div>
-      `;
-    }catch(e){
-      $('#dashStats').innerHTML = `<div class="muted">${e.message}</div>`;
-    }
-
-    try{
-      await loadTokens();
-      $('#recentTokens').innerHTML = tokensTableHtml();
-      $$('#recentTokens [data-revoke]').forEach(b=>b.addEventListener('click', revokeToken));
-      $$('#recentTokens [data-copy]').forEach(b=>b.addEventListener('click', copyToken));
-    }catch(e){
-      $('#recentTokens').innerHTML = `<div class="muted">${e.message}</div>`;
-    }
-
-    $('#qaCreatePro')?.addEventListener('click', async ()=>{
-      try{
-        const r = await api('/admin/tokens', {method:'POST', body: JSON.stringify({tier:'pro', expires_days:30, note:'quick'})});
-        toast('Created: ' + r.token);
-        await bindDashboard();
-      }catch(e){ toast(e.message); }
+  try {
+    const d = await api('POST', '/admin/news', {
+      title, preview_text: preview, full_text: text, author,
+      image_url, video_url, media_position, media_rounded, published,
     });
-    $('#qaRefresh')?.addEventListener('click', async ()=>{ await bindDashboard(); toast('Refreshed'); });
+    const el = document.getElementById('cn-result');
+    el.style.display = 'block';
+    el.style.color = 'var(--green)';
+    el.textContent = '✓ Новость опубликована';
+    toast('✓ Новость опубликована');
+    // Clear form
+    ['cn-title','cn-preview','cn-text','cn-image','cn-video'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('media-preview-wrap').innerHTML = '<div style="color:var(--dim);font-size:10px">Введите URL картинки</div>';
+  } catch { toast('Ошибка', true); }
+}
+
+async function togglePublish(id, published) {
+  const d = await api('PATCH', `/admin/news/${id}`, { published });
+  if (d.ok) { toast(published ? '✓ Опубликовано' : '✓ Скрыто'); loadNews(); } else toast(d.error, true);
+}
+
+async function deleteNews(id) {
+  if (!confirm('Удалить новость?')) return;
+  const d = await api('DELETE', `/admin/news/${id}`);
+  if (d.ok) { toast('✓ Удалено'); loadNews(); } else toast(d.error, true);
+}
+
+function previewMedia() {
+  const url = document.getElementById('cn-image').value.trim();
+  const wrap = document.getElementById('media-preview-wrap');
+  if (url) {
+    wrap.innerHTML = `<img src="${url}" class="media-preview" onerror="this.style.display='none'" />`;
+  } else {
+    wrap.innerHTML = '<div style="color:var(--dim);font-size:10px">Введите URL картинки</div>';
   }
-
-  async function createToken(){
-    const tier = $('#tokTier').value;
-    const exp = $('#tokExp').value.trim();
-    const note = $('#tokNote').value.trim();
-    const payload = { tier, note: note || undefined, expires_days: exp ? Number(exp) : undefined };
-    try{
-      const r = await api('/admin/tokens', {method:'POST', body: JSON.stringify(payload)});
-      toast('Created: ' + r.token);
-      await loadTokens();
-      $('#tokensTable').innerHTML = tokensTableHtml();
-      bindTokenTableActions();
-    }catch(e){ toast(e.message); }
-  }
-
-  async function revokeToken(e){
-    const token = e.currentTarget.dataset.revoke;
-    if (!confirm('Revoke token? ' + token)) return;
-    try{ await api('/admin/tokens/' + encodeURIComponent(token), {method:'DELETE'}); toast('Revoked'); await loadTokens(); render(); }
-    catch(err){ toast(err.message); }
-  }
-
-  async function copyToken(e){
-    const token = e.currentTarget.dataset.copy;
-    await navigator.clipboard.writeText(token);
-    toast('Copied');
-  }
-
-  function bindTokenTableActions(){
-    $$('#tokensTable [data-revoke]').forEach(b=>b.addEventListener('click', revokeToken));
-    $$('#tokensTable [data-copy]').forEach(b=>b.addEventListener('click', copyToken));
-  }
-
-  async function bindTokens(){
-    await loadTokens();
-    $('#tokensTable').innerHTML = tokensTableHtml();
-    bindTokenTableActions();
-    $('#btnCreateToken').addEventListener('click', createToken);
-    $('#btnReloadTokens').addEventListener('click', async ()=>{ await loadTokens(); $('#tokensTable').innerHTML = tokensTableHtml(); bindTokenTableActions(); toast('Reloaded'); });
-  }
-
-  function bindSettings(){
-    $('#btnSaveSettings').addEventListener('click', ()=>{
-      state.baseUrl = $('#baseUrl').value.trim() || location.origin;
-      state.adminSecret = $('#adminSecret2').value.trim();
-      localStorage.setItem('rvn_admin_secret', state.adminSecret);
-      localStorage.setItem('rvn_base_url', state.baseUrl);
-      toast('Saved');
-      render();
-    });
-    $('#btnLogout').addEventListener('click', ()=>{
-      state.adminSecret = '';
-      localStorage.removeItem('rvn_admin_secret');
-      toast('Logged out');
-      render();
-    });
-  }
-
-  function bindView(){
-    if (state.view === 'dashboard') bindDashboard();
-    if (state.view === 'tokens') bindTokens();
-    if (state.view === 'settings') bindSettings();
-
-    $('#btnUserScaffold')?.addEventListener('click', ()=>toast('Next step: SQLite users table'));
-    $('#btnAuditScaffold')?.addEventListener('click', ()=>toast('Next step: SQLite audit table'));
-  }
-
-  function initLogin(){
-    $('#btnLogin').addEventListener('click', ()=>{
-      state.adminSecret = $('#adminSecret').value.trim();
-      localStorage.setItem('rvn_admin_secret', state.adminSecret);
-      toast('Auth set');
-      render();
-    });
-    $('#btnLoginDemo').addEventListener('click', ()=>{
-      state.adminSecret = 'RAVENS_ADMIN_SECRET_CHANGE_ME';
-      localStorage.setItem('rvn_admin_secret', state.adminSecret);
-      toast('Demo secret set');
-      render();
-    });
-  }
-
-  // Boot
-  state.adminSecret = localStorage.getItem('rvn_admin_secret') || '';
-  state.baseUrl = localStorage.getItem('rvn_base_url') || location.origin;
-  navInit();
-  initLogin();
-  setAuthPill();
-  refreshHealth();
-  setInterval(refreshHealth, 5000);
-  render();
+}
 </script>
 </body>
 </html>

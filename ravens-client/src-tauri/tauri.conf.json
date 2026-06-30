@@ -12,19 +12,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
-    "resources": ["ravens-nexus-server*"],
-    "windows": {
-      "certificateThumbprint": null,
-      "digestAlgorithm": "sha256",
-      "timestampUrl": ""
-    },
-    "updater": {
-      "active": true,
-      "endpoints": ["https://your-update-server.com/{{target}}/{{arch}}/{{current_version}}"],
-      "dialog": true,
-      "pubkey": ""
-    }
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   },
   "app": {
     "windows": [
@@ -41,7 +35,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' 'unsafe-inline' tauri: asset: http://127.0.0.1:8080 https: data: blob:"
+      "csp": "default-src 'self' 'unsafe-inline' tauri: asset: https: http: data: blob:"
     }
   }
 }

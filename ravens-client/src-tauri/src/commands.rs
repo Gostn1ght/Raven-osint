@@ -1,91 +1,124 @@
-//! Tauri commands — called from the Svelte frontend via invoke()
+use crate::{config, hwid, osint};
+use serde::Deserialize;
 
-use reqwest::Client;
-use serde_json::Value;
-use tauri::State;
-use std::sync::Mutex;
-
-const API_BASE: &str = "http://127.0.0.1:8080/api";
-
-pub struct TokenStore(pub Mutex<Option<String>>);
-
-// ─── HWID ──────────────────────────────────────────────────────────────────
-
+// ── HWID ─────────────────────────────────────────────────────────────────────
 #[tauri::command]
-pub async fn get_hwid() -> String {
-    crate::hwid::generate()
+pub fn get_hwid() -> String {
+    hwid::get_hwid()
 }
 
-// ─── Generic HTTP wrappers ─────────────────────────────────────────────────
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+#[tauri::command]
+pub fn save_config(key: &str, value: &str) -> Result<(), String> {
+    let h = hwid::get_hwid();
+    let encrypted = config::encrypt(value, &h).map_err(|e| e.to_string())?;
+    let path = config_path(key);
+    std::fs::write(&path, encrypted).map_err(|e| e.to_string())
+}
 
-fn client(token: Option<String>) -> Client {
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Some(t) = token {
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", t).parse().unwrap(),
-        );
+#[tauri::command]
+pub fn load_config(key: &str) -> Result<String, String> {
+    let h = hwid::get_hwid();
+    let path = config_path(key);
+    let encrypted = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    config::decrypt(&encrypted, &h).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_config(key: &str) -> Result<(), String> {
+    let path = config_path(key);
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
-    Client::builder()
-        .default_headers(headers)
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .unwrap()
-}
-
-#[tauri::command]
-pub async fn api_get(path: String, token: Option<String>) -> Result<Value, String> {
-    let url = format!("{}{}", API_BASE, path);
-    client(token)
-        .get(&url)
-        .send().await
-        .map_err(|e| e.to_string())?
-        .json::<Value>().await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn api_post(path: String, body: Value, token: Option<String>) -> Result<Value, String> {
-    let url = format!("{}{}", API_BASE, path);
-    client(token)
-        .post(&url)
-        .json(&body)
-        .send().await
-        .map_err(|e| e.to_string())?
-        .json::<Value>().await
-        .map_err(|e| e.to_string())
-}
-
-// ─── Token management ──────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn save_token(token: String, app: tauri::AppHandle) -> Result<(), String> {
-    use tauri_plugin_store::StoreExt;
-    let store = app.store("credentials.bin").map_err(|e| e.to_string())?;
-    store.set("jwt", serde_json::json!(token));
-    store.save().map_err(|e| e.to_string())?;
     Ok(())
 }
 
-#[tauri::command]
-pub async fn load_token(app: tauri::AppHandle) -> Option<String> {
-    use tauri_plugin_store::StoreExt;
-    let store = app.store("credentials.bin").ok()?;
-    store.get("jwt")?.as_str().map(|s| s.to_string())
+fn config_path(key: &str) -> std::path::PathBuf {
+    let mut dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    dir.push("ravens_config");
+    std::fs::create_dir_all(&dir).ok();
+    dir.push(format!("{}.enc", key));
+    dir
+}
+
+// ── OSINT SCAN ────────────────────────────────────────────────────────────────
+#[derive(Debug, Deserialize)]
+pub struct ScanRequest {
+    pub target: String,
+    pub target_type: String,
+    pub modules: Vec<String>,
+    pub nvidia_api_key: Option<String>,
 }
 
 #[tauri::command]
-pub async fn clear_token(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri_plugin_store::StoreExt;
-    let store = app.store("credentials.bin").map_err(|e| e.to_string())?;
-    store.delete("jwt");
-    store.save().map_err(|e| e.to_string())?;
-    Ok(())
+pub async fn osint_scan(req: ScanRequest) -> Result<Vec<osint::OsintEvent>, String> {
+    let mut all_events: Vec<osint::OsintEvent> = vec![];
+    let target = req.target.trim();
+
+    for module in &req.modules {
+        let events = match module.as_str() {
+            "social"  => osint::run_social_check(target).await,
+            "hibp"    => osint::run_hibp(target).await,
+            "ip"      => osint::run_ip(target).await,
+            "whois"   => osint::run_whois(target).await,
+            "dorks"   => osint::run_dorks(target),
+            "paste"   => osint::run_paste(target).await,
+            "darkweb" => osint::run_darkweb(target).await,
+            "phone"   => osint::run_phone(target).await,
+            "intelx"  => osint::run_intelx(target).await,
+            _ => vec![],
+        };
+        all_events.extend(events);
+    }
+
+    // AI analysis if key provided
+    if let Some(api_key) = &req.nvidia_api_key {
+        if !api_key.is_empty() && req.modules.contains(&"ai".to_string()) {
+            let findings: Vec<String> = all_events.iter()
+                .filter(|e| e.kind == "found")
+                .map(|e| e.text.clone())
+                .collect();
+            let ai_events = osint::run_ai(target, &findings, api_key).await;
+            all_events.extend(ai_events);
+        }
+    }
+
+    Ok(all_events)
 }
 
-// ─── Server health ─────────────────────────────────────────────────────────
+// ── SINGLE MODULE ─────────────────────────────────────────────────────────────
+#[derive(Debug, Deserialize)]
+pub struct ModuleRequest {
+    pub module: String,
+    pub target: String,
+    pub nvidia_api_key: Option<String>,
+    pub findings: Option<Vec<String>>,
+}
 
 #[tauri::command]
-pub async fn server_health() -> bool {
-    crate::server::is_healthy_pub().await
+pub async fn osint_module(req: ModuleRequest) -> Result<Vec<osint::OsintEvent>, String> {
+    let target = req.target.trim();
+    let events = match req.module.as_str() {
+        "social"  => osint::run_social_check(target).await,
+        "hibp"    => osint::run_hibp(target).await,
+        "ip"      => osint::run_ip(target).await,
+        "whois"   => osint::run_whois(target).await,
+        "dorks"   => osint::run_dorks(target),
+        "paste"   => osint::run_paste(target).await,
+        "darkweb" => osint::run_darkweb(target).await,
+        "phone"   => osint::run_phone(target).await,
+        "intelx"  => osint::run_intelx(target).await,
+        "ai" => {
+            let key = req.nvidia_api_key.as_deref().unwrap_or("");
+            let empty: Vec<String> = vec![];
+            let findings = req.findings.as_deref().unwrap_or(&empty);
+            osint::run_ai(target, findings, key).await
+        }
+        _ => vec![osint::OsintEvent::new("error", "error",
+            format!("Неизвестный модуль: {}", req.module))],
+    };
+    Ok(events)
 }

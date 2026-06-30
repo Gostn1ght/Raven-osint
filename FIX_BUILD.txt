@@ -1,0 +1,31 @@
+ИСПРАВЛЕНИЕ ОШИБКИ СБОРКИ (cookie / time)
+==========================================
+
+Ошибка:
+  error[E0061]: this method takes 2 arguments but 1 argument was supplied
+  --> cookie-0.18.1/src/parse.rs
+  error: could not compile `cookie`
+
+Причина:
+  Старый крейт cookie 0.18.1 несовместим с новой версией time (0.3.41+),
+  которую Cargo выбрал в Cargo.lock.
+
+ЧТО СДЕЛАНО:
+  В ravens-client/src-tauri/Cargo.toml добавлен пин:
+      time = "=0.3.36"
+
+ВАЖНO — ОБНОВИТЕ LOCK-ФАЙЛ перед сборкой:
+
+  1. Удалите старый Cargo.lock (если он есть):
+       del Cargo.lock                (в корне ravens-nexus\)
+       del ravens-client\src-tauri\Cargo.lock
+
+  2. Затем запустите заново:
+       cd ravens-client
+       pnpm tauri dev
+     или для exe:
+       pnpm tauri build
+
+Если ошибка про time останется — выполните в корне проекта:
+       cargo update -p time --precise 0.3.36
+       cargo update -p cookie

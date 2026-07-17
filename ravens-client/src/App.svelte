@@ -16,6 +16,7 @@
   let selectedModules = new Set(["social", "ip_geo", "whois"]);
 
   // License
+  const DEFAULT_SERVER_URL = "https://69e0e937-387f-4aa3-9d15-8e9ffcd3b057-00-2i89nydyt7vcb.sisko.replit.dev:5000";
   let serverUrl = "";
   let tokenInput = "";
   let tokenStatus = "";
@@ -24,6 +25,18 @@
   let sessionId = "";
   let hwid = "";
   let allowedModules: string[] = ["social", "ip_geo", "whois"];
+
+  // Ban state
+  let isBanned = false;
+  let banReason = "";
+  let banDate = "";
+
+  // OSINT fields (2.8.4)
+  let targetUsername = "";
+  let targetEmail = "";
+  let targetPhone = "";
+  let targetIp = "";
+  let targetDomain = "";
 
   // News
   let news: any[] = [];
@@ -100,20 +113,72 @@
     ["ai",       { icon: "⬡", label: "AI Анализ",         pro: true  }],
   ];
 
-  const settingsSections = ["server", "subscriptions", "account", "appearance", "advanced"];
+  const settingsSections = ["server", "subscriptions", "account", "appearance", "advanced", "pricing"];
   const settingsLabels: Record<string, string> = {
     server: "🔗 Сервер",
     subscriptions: "⭐ Подписки",
     account: "👤 Аккаунт",
     appearance: "🎨 Внешний вид",
     advanced: "⚙️ Дополнительно",
+    pricing: "💳 Оплата",
   };
+
+  // ── URL Normalization (2.6.1) ───────────────────────────────────────────────
+  function normalizeUrl(url: string): { type: string; id?: string; url: string } {
+    if (!url) return { type: "text", url };
+    try {
+      const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+      // YouTube normalization
+      if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
+        let videoId = "";
+        if (u.hostname.includes("youtu.be")) {
+          videoId = u.pathname.slice(1);
+        } else if (u.pathname === "/watch") {
+          videoId = u.searchParams.get("v") || "";
+        } else if (u.pathname.startsWith("/shorts/")) {
+          videoId = u.pathname.split("/")[2] || "";
+        } else if (u.pathname.startsWith("/embed/")) {
+          videoId = u.pathname.split("/")[2] || "";
+        }
+        if (videoId) {
+          return { type: "youtube", id: videoId, url: `https://www.youtube.com/embed/${videoId}` };
+        }
+      }
+      return { type: "link", url: u.href };
+    } catch {
+      return { type: "text", url };
+    }
+  }
+
+  // ── HWID Ban Check (2.6.2) ─────────────────────────────────────────────────
+  async function checkBanStatus() {
+    if (!hwid || !serverUrl) return;
+    try {
+      const res = await fetch(`${serverUrl}/api/hwid/check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hwid }),
+      });
+      const data = await res.json();
+      if (data.banned) {
+        isBanned = true;
+        banReason = data.reason || "Устройство заблокировано";
+        banDate = data.date || "";
+      }
+    } catch {}
+  }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   onMount(async () => {
     try { hwid = await invoke("get_hwid"); } catch {}
     const saved = localStorage.getItem("ravens_server_url");
-    if (saved) serverUrl = saved;
+    if (saved) {
+      serverUrl = saved;
+    } else {
+      // First launch: pre-fill default URL (2.8.3)
+      serverUrl = DEFAULT_SERVER_URL;
+      localStorage.setItem("ravens_server_url", DEFAULT_SERVER_URL);
+    }
     const savedToken = localStorage.getItem("ravens_token");
     if (savedToken) tokenInput = savedToken;
     const savedSession = localStorage.getItem("ravens_session_id");
@@ -126,9 +191,106 @@
     if (savedRemaining) requestsRemaining = parseInt(savedRemaining);
     const savedScheme = localStorage.getItem("ravens_scheme");
     if (savedScheme) currentScheme = savedScheme;
+    // Load compact mode (2.8.2)
+    const savedCompact = localStorage.getItem("ravens_compact");
+    if (savedCompact) compactMode = savedCompact === "true";
 
-    if (serverUrl) fetchNews();
+    // Check ban status
+    await checkBanStatus();
+
+    // Health check (2.8.1)
+    checkHealth();
+
+    if (serverUrl) {
+      fetchNews();
+      subscribeNewsStream();
+    }
   });
+
+  // ── Health Check (2.8.1) ───────────────────────────────────────────────────
+  let healthModules: any = {};
+  async function checkHealth() {
+    if (!serverUrl) return;
+    try {
+      const res = await fetch(`${serverUrl}/health`);
+      if (res.ok) {
+        const data = await res.json();
+        healthModules = data.modules || {};
+      }
+    } catch {}
+  }
+
+  // ── Window Controls (2.7.2) ─────────────────────────────────────────────────
+  async function minimizeWindow() {
+    try { await invoke('minimize_window'); } catch {}
+  }
+  async function maximizeWindow() {
+    try { await invoke('maximize_window'); } catch {}
+  }
+  async function closeWindow() {
+    try { await invoke('close_window'); } catch {}
+  }
+
+  // ── Map (2.7.1) ─────────────────────────────────────────────────────────────
+  let mapInstance: any = null;
+  let mapMarkers: any[] = [];
+
+  function initMap() {
+    if (mapInstance) return;
+    // @ts-ignore - Leaflet loaded from CDN
+    if (typeof L === 'undefined') return;
+    // @ts-ignore
+    mapInstance = L.map('map-container').setView([55.7558, 37.6173], 4); // Moscow default
+    // @ts-ignore
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap © CartoDB',
+      maxZoom: 19,
+    }).addTo(mapInstance);
+    // Add existing pins
+    updateMapMarkers();
+  }
+
+  function updateMapMarkers() {
+    if (!mapInstance) return;
+    // Clear existing markers
+    mapMarkers.forEach(m => mapInstance.removeLayer(m));
+    mapMarkers = [];
+    // @ts-ignore
+    if (typeof L === 'undefined') return;
+    mapPins.forEach(pin => {
+      // @ts-ignore
+      const marker = L.marker([pin.lat, pin.lon]).addTo(mapInstance);
+      marker.bindPopup(`<b>${pin.label}</b><br>${pin.lat}, ${pin.lon}`);
+      mapMarkers.push(marker);
+    });
+  }
+
+  // Initialize map when tab is active
+  $: if (activeTab === "map" && licenseTier !== "FREE") {
+    setTimeout(initMap, 100);
+  }
+
+  // ── SSE Live News (2.6.4) ──────────────────────────────────────────────────
+  let newsEventSource: EventSource | null = null;
+  function subscribeNewsStream() {
+    if (newsEventSource) newsEventSource.close();
+    if (!serverUrl) return;
+    newsEventSource = new EventSource(`${serverUrl}/api/news/stream`);
+    newsEventSource.addEventListener("news", (e: MessageEvent) => {
+      try {
+        const item = JSON.parse(e.data);
+        // Prepend if not duplicate
+        if (!news.some((n: any) => n.id === item.id)) {
+          news = [item, ...news];
+        }
+      } catch {}
+    });
+    newsEventSource.onerror = () => {
+      newsEventSource?.close();
+      // Silent reconnect after 5s
+      setTimeout(() => subscribeNewsStream(), 5000);
+    };
+  }
 
   // ── News ───────────────────────────────────────────────────────────────────
   async function fetchNews() {
@@ -148,38 +310,39 @@
     openedNews = null;
   }
 
-  // ── License ────────────────────────────────────────────────────────────────
+  // ── License (SECURE — uses Tauri commands with HMAC signatures) ────────────
   async function activateToken() {
-    if (!serverUrl || !tokenInput || !hwid) {
-      tokenStatus = "⚠ Заполни URL сервера и токен";
+    if (!tokenInput) {
+      tokenStatus = "⚠ Введите токен";
       return;
     }
-    tokenStatus = "⏳ Активация...";
+    tokenStatus = "⏳ Активация с проверкой подписи...";
     try {
-      const res = await fetch(`${serverUrl}/api/license/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tokenInput, hwid, app_version: "0.2.0" }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        licenseTier = data.tier;
-        requestsRemaining = data.requests_remaining === 9223372036854775807 ? Infinity : data.requests_remaining;
-        allowedModules = data.allowed_modules || [];
-        sessionId = data.session_id || "";
-        tokenStatus = `✓ Активирован · ${data.tier} · ${data.expires ? "до " + data.expires : "∞"}`;
-        localStorage.setItem("ravens_server_url", serverUrl);
+      // Use Tauri command — client signs the request automatically
+      const data = await invoke("authenticate", { token: tokenInput });
+      
+      if (data.body && data.body.ok) {
+        licenseTier = data.body.tier;
+        requestsRemaining = data.body.requests_remaining === 9223372036854775807 
+          ? Infinity 
+          : data.body.requests_remaining;
+        allowedModules = data.body.allowed_modules || [];
+        sessionId = data.body.session_id || "";
+        tokenStatus = `✓ Активирован · ${data.body.tier} · ${data.body.expires ? "до " + data.body.expires : "∞"}`;
+        
+        // Save to localStorage
         localStorage.setItem("ravens_token", tokenInput);
         localStorage.setItem("ravens_session_id", sessionId);
         localStorage.setItem("ravens_tier", licenseTier);
         localStorage.setItem("ravens_allowed_modules", JSON.stringify(allowedModules));
         localStorage.setItem("ravens_remaining", String(requestsRemaining));
+        
         fetchNews();
       } else {
-        tokenStatus = `✗ ${data.error || "Ошибка активации"}`;
+        tokenStatus = `✗ ${data.error || data.body?.error || "Ошибка активации"}`;
       }
     } catch (e) {
-      tokenStatus = "✗ Сервер недоступен";
+      tokenStatus = `✗ Ошибка: ${e}`;
     }
   }
 
@@ -207,12 +370,13 @@
       moduleCount++;
       addEvent(mod, "running", `▶ Запуск ${mod}...`);
       try {
-        const res = await fetch(`${serverUrl}/api/license/consume`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: tokenInput, hwid, module: mod, session_id: sessionId }),
+        // Use secure Tauri command — request is signed with HMAC
+        const data = await invoke("executeAction", {
+          token: tokenInput,
+          module: mod,
+          sessionId: sessionId,
         });
-        const data = await res.json();
+        
         if (!data.ok) {
           addEvent(mod, "error", `✗ ${data.error || "Отказано"}`);
           continue;
@@ -242,6 +406,64 @@
     localStorage.setItem("ravens_scheme", key);
   }
 
+  // ── Compact Mode Persistence (2.8.2) ───────────────────────────────────────
+  function toggleCompactMode() {
+    compactMode = !compactMode;
+    localStorage.setItem("ravens_compact", String(compactMode));
+  }
+
+  // ── Visual Dossier Generation (2.8.6) ──────────────────────────────────────
+  function generateDossier() {
+    const foundEvents = events.filter((e: any) => e.type === "found");
+    const categories: Record<string, string[]> = {};
+    foundEvents.forEach((e: any) => {
+      if (!categories[e.module]) categories[e.module] = [];
+      categories[e.module].push(e.text);
+    });
+
+    const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Ravens Nexus — Dossier</title>
+<style>
+  body { background: #0a0a0f; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; padding: 40px; }
+  h1 { color: #7c3aed; letter-spacing: 3px; border-bottom: 1px solid #7c3aed; padding-bottom: 10px; }
+  h2 { color: #7c3aed; margin-top: 30px; font-size: 14px; }
+  .summary { background: #13131a; padding: 15px; border-radius: 8px; margin: 20px 0; }
+  .item { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12px; }
+  .meta { color: #64748b; font-size: 10px; margin-top: 30px; }
+  .badge { background: rgba(124,58,237,0.2); color: #7c3aed; padding: 2px 8px; border-radius: 3px; font-size: 10px; }
+</style>
+</head>
+<body>
+<h1>⬡ RAVENS NEXUS — DOSSIER</h1>
+<div class="summary">
+  <strong>Generated:</strong> ${new Date().toLocaleString("ru-RU")}<br>
+  <strong>Target:</strong> ${target || "N/A"}<br>
+  <strong>Findings:</strong> ${foundEvents.length}<br>
+  <strong>Modules used:</strong> ${Object.keys(categories).join(", ") || "N/A"}
+</div>
+${Object.entries(categories).map(([cat, items]) => `
+<h2>${cat.toUpperCase()}</h2>
+${items.map((i: string) => `<div class="item">• ${i}</div>`).join("")}
+`).join("")}
+<div class="meta">Ravens Nexus OSINT Platform · v2.8.0 · ${new Date().toISOString()}</div>
+</body>
+</html>`;
+
+    // Create blob and open in browser
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    // Also save via download
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ravens_dossier_${Date.now()}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   $: filteredEvents = filterModule === "all" ? events : events.filter(e => e.module === filterModule);
 </script>
 
@@ -257,14 +479,52 @@
   }
 
   .app { display: flex; flex-direction: column; height: 100vh; }
+  .app.compact .panel { padding: 6px 8px; }
+  .app.compact .news-card { min-width: 220px; max-width: 240px; }
+  .app.compact .news-card-media { height: 120px; }
+  .app.compact .news-card-body { padding: 8px; }
+  .app.compact .news-card-title { font-size: 11px; }
+  .app.compact .sub-card { padding: 14px; }
+  .app.compact .sub-price { font-size: 18px; }
+  .app.compact { font-size: 12px; }
 
-  /* Header */
+  /* Header / Custom Topbar (2.7.2) */
   .header {
     display: flex; align-items: center; gap: 16px;
     padding: 8px 16px;
     background: var(--surface);
     border-bottom: 1px solid rgba(255,255,255,0.06);
     flex-shrink: 0;
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+  .window-controls {
+    display: flex;
+    gap: 0;
+    margin-left: 16px;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+  .win-btn {
+    width: 36px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+  .win-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: var(--text);
+  }
+  .win-close:hover {
+    background: #e81123;
+    color: #fff;
   }
   .logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: 3px; }
   .stats { display: flex; gap: 12px; margin-left: auto; }
@@ -577,23 +837,51 @@
   .token-status.pending { color: var(--accent); }
 </style>
 
-<div class="app" style={cssVars}>
-  <!-- Header -->
-  <div class="header">
-    <div class="logo">⬡ RAVEN</div>
-    <div style="font-size:10px;color:var(--dim)">GLOBAL THREAT INTERCEPT · OSINT PLATFORM</div>
-    <div class="stats">
+<!-- ── Ban Block Screen (2.6.2) ──────────────────────────────────────────── -->
+{#if isBanned}
+<div style="position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center">
+  <div style="text-align:center;max-width:480px;padding:40px">
+    <div style="font-size:64px;margin-bottom:20px">⛔</div>
+    <div style="font-size:24px;color:#f87171;letter-spacing:3px;margin-bottom:16px">УСТРОЙСТВО ЗАБЛОКИРОВАНО</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:24px;line-height:1.6">
+      Ваше устройство было заблокировано администратором.<br>
+      Причина: <strong style="color:var(--text)">{banReason}</strong><br>
+      {#if banDate}<span style="font-size:10px">Дата: {banDate}</span>{/if}
+    </div>
+    <div style="background:var(--surface);border:1px solid rgba(248,113,113,0.3);border-radius:12px;padding:20px;margin-bottom:20px">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:12px">Хотите запросить разблокировку?</div>
+      <button class="btn" style="border-color:#f87171;color:#f87171" on:click={() => alert('Запрос на разблокировку отправлен администратору.')}>
+        📨 Запросить разблокировку
+      </button>
+    </div>
+    <div style="font-size:10px;color:var(--dim)">HWID: {hwid.substring(0,16)}...</div>
+  </div>
+</div>
+{/if}
+
+<div class="app" style={cssVars} class:compact={compactMode}>
+  <!-- Custom Topbar (2.7.2) -->
+  <div class="header" data-tauri-drag-region style="app-region: drag">
+    <div class="logo" data-tauri-drag-region>⬡ RAVEN</div>
+    <div style="font-size:10px;color:var(--dim)" data-tauri-drag-region>GLOBAL THREAT INTERCEPT · OSINT PLATFORM</div>
+    <div class="stats" data-tauri-drag-region>
       <div class="stat"><span>{foundCount}</span> НАЙДЕНО</div>
       <div class="stat"><span>{moduleCount}</span>/10 МОДУЛЕЙ</div>
       <div class="stat"><span style="color:{threatLevel==='CRITICAL'?'#dc2626':threatLevel==='HIGH'?'#f59e0b':threatLevel==='MEDIUM'?'#eab308':'#4ade80'}">{threatLevel}</span> УГРОЗА</div>
       <div class="stat"><span>{scanTime}s</span> ВРЕМЯ</div>
       <div class="tier-badge"><div class="tier-dot"></div>{licenseTier}</div>
     </div>
+    <!-- Window Controls -->
+    <div class="window-controls" style="app-region: no-drag">
+      <button class="win-btn win-min" on:click={() => minimizeWindow()} title="Свернуть">─</button>
+      <button class="win-btn win-max" on:click={() => maximizeWindow()} title="Развернуть">□</button>
+      <button class="win-btn win-close" on:click={() => closeWindow()} title="Закрыть">✕</button>
+    </div>
   </div>
 
   <!-- Nav -->
   <div class="nav">
-    {#each [["ravens","⬡ RAVENS"],["scan","◎ OSINT"],["map","◈ КАРТА"],["settings","⚙ НАСТРОЙКИ"]] as [t, label]}
+    {#each [["ravens","⬡ RAVENS"],["scan","◎ OSINT"],["discord","💬 DISCORD"],["map","◈ КАРТА"],["settings","⚙ НАСТРОЙКИ"]] as [t, label]}
       <button class="nav-btn" class:active={activeTab===t} on:click={() => activeTab = t}>{label}</button>
     {/each}
   </div>
@@ -687,8 +975,18 @@
           <!-- Sidebar -->
           <div class="scan-sidebar">
             <div class="panel">
-              <div class="panel-title">// ЦЕЛЬ</div>
-              <input class="input" bind:value={target} placeholder="Введите цель..."
+              <div class="panel-title">// ЦЕЛЬ (2.8.4)</div>
+              <!-- Split fields for different target types -->
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+                <input class="input" bind:value={targetUsername} placeholder="👤 Username" />
+                <input class="input" bind:value={targetEmail} placeholder="📧 Email" />
+                <input class="input" bind:value={targetPhone} placeholder="📱 Phone" />
+                <input class="input" bind:value={targetIp} placeholder="🌐 IP Address" />
+                <input class="input" bind:value={targetDomain} placeholder="🔗 Domain" />
+              </div>
+              <div class="hint" style="font-size:9px;color:var(--dim);margin-bottom:8px">Заполните нужные поля — модули выберутся автоматически</div>
+              <!-- Legacy combined target (optional) -->
+              <input class="input" bind:value={target} placeholder="Или общая цель..."
                 on:keydown={e => e.key === "Enter" && startScan()} style="margin-bottom:8px" />
               <div class="type-btns">
                 {#each ["username","email","ip","domain","phone"] as t}
@@ -701,15 +999,24 @@
               <div class="panel-title">// МОДУЛИ ({selectedModules.size})</div>
               {#each availableModules as [mod, def]}
                 {@const locked = !allowedModules.includes(mod)}
+                {@const health = healthModules[mod]?.status || "unknown"}
                 <div class="module-item" class:selected={selectedModules.has(mod)} style={locked?"opacity:0.4":""}>
                   <input type="checkbox" checked={selectedModules.has(mod)}
                     on:change={() => !locked && toggleModule(mod)}
                     disabled={locked} />
                   <span>{def.icon}</span>
                   <span style="flex:1">{def.label}</span>
+                  {#if health === "error"}<span style="color:#f87171;font-size:9px">⚠</span>{/if}
                   {#if def.pro && locked}<span class="badge">PRO</span>{/if}
                 </div>
               {/each}
+              <div style="font-size:9px;color:var(--dim);margin-top:8px">
+                {#if Object.keys(healthModules).length > 0}
+                  <span style="color:#4ade80">●</span> {Object.values(healthModules).filter(m => m.status === "ok").length}/{Object.keys(healthModules).length} модулей активно
+                {:else}
+                  <span style="color:var(--dim)">●</span> Нажмите для проверки статуса
+                {/if}
+              </div>
             </div>
 
             <div style="display:flex;flex-direction:column;gap:6px">
@@ -725,9 +1032,12 @@
             <div class="panel" style="display:flex;align-items:center;gap:6px;padding:6px 12px">
               <span style="font-size:10px;color:var(--dim)">ravens@nexus:~$ osint {target}</span>
               {#if scanning}<span style="font-size:10px;color:#dc2626;animation:pulse 1s infinite">● REC</span>{/if}
-              <div style="margin-left:auto;display:flex;gap:4px">
+              <div style="margin-left:auto;display:flex;gap:4px;align-items:center">
+                {#if events.length > 0}
+                <button class="btn btn-sm" on:click={generateDossier} title="Генерировать досье">📄 ДОСЬЕ</button>
+                {/if}
                 <div class="panel-tabs">
-                  {#each [["console","КОНСОЛЬ"],["dossier","ДОСЬЕ"],["ai","AI"]] as [t, label]}
+                  {#each [["console","КОНСОЛЬ"],["dossier","ДОСЬЕ"],["database","БАЗЫ ДАННЫХ"],["ai","AI"]] as [t, label]}
                     <button class="panel-tab" class:active={panelTab===t} on:click={() => panelTab = t}>⬡ {label}</button>
                   {/each}
                 </div>
@@ -770,10 +1080,43 @@
 
             {:else if panelTab === "dossier"}
               <div class="panel" style="flex:1;overflow-y:auto">
-                {#if !dossierText}
+                {#if events.length === 0}
                   <div class="empty-state"><div class="empty-icon">📄</div>Запустите расследование</div>
                 {:else}
-                  <pre style="font-size:11px;line-height:1.7;white-space:pre-wrap">{dossierText}</pre>
+                  <div style="font-size:11px;line-height:1.7">
+                    <div style="color:var(--accent);margin-bottom:12px">⬡ ДОСЬЕ НА ОСНОВЕ ДАННЫХ</div>
+                    <div style="color:var(--dim);margin-bottom:8px">Цель: {target || targetUsername || targetEmail || "N/A"}</div>
+                    <div style="color:var(--dim);margin-bottom:8px">Найдено: {events.filter(e => e.type === "found").length} записей</div>
+                    {#each events.filter(e => e.type === "found") as ev}
+                      <div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+                        <span style="color:var(--accent)">[{ev.module.toUpperCase()}]</span> {ev.text}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+
+            {:else if panelTab === "database"}
+              <div class="panel" style="flex:1;overflow-y:auto">
+                <div style="color:var(--accent);margin-bottom:12px">🗄️ ПОИСК ПО БАЗАМ ДАННЫХ</div>
+                <div style="font-size:11px;color:var(--dim);margin-bottom:16px">
+                  Поиск по утечкам, breach-базах и публичным записям
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  {#each ["HaveIBeenPwned", "Dehashed", "LeakCheck", "Snusbase", "BreachDirectory", "IntelX"] as db}
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(0,0,0,0.3);border-radius:6px">
+                      <span style="font-size:11px">{db}</span>
+                      <span class="badge">PRO</span>
+                    </div>
+                  {/each}
+                </div>
+                {#if targetEmail || targetUsername || targetPhone}
+                <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06)">
+                  <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Активные цели для поиска:</div>
+                  {#if targetEmail}<div style="font-size:11px">📧 {targetEmail}</div>{/if}
+                  {#if targetUsername}<div style="font-size:11px">👤 {targetUsername}</div>{/if}
+                  {#if targetPhone}<div style="font-size:11px">📱 {targetPhone}</div>{/if}
+                </div>
                 {/if}
               </div>
 
@@ -790,9 +1133,62 @@
         </div>
       </div>
 
+    <!-- ── DISCORD TAB (2.7.4) ────────────────────────────────────────── -->
+    {:else if activeTab === "discord"}
+      <div class="scroll">
+        <div class="scan-layout">
+          <div class="scan-sidebar">
+            <div class="panel">
+              <div class="panel-title">// DISCORD TOKEN</div>
+              <input class="input" type="password" placeholder="Bot/User Token..." style="margin-bottom:8px" />
+              <div class="hint" style="font-size:9px;color:#f87171">⚠️ User-token нарушает ToS. Рекомендуется Bot + OAuth2</div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">// ФИЛЬТРЫ</div>
+              <input class="input" placeholder="Channel ID" style="margin-bottom:6px" />
+              <input class="input" placeholder="Поисковый запрос" style="margin-bottom:6px" />
+              <input class="input" type="date" placeholder="Дата от" style="margin-bottom:6px" />
+              <input class="input" type="date" placeholder="Дата до" style="margin-bottom:6px" />
+            </div>
+            <button class="btn btn-primary">► ПАРСИТЬ</button>
+          </div>
+          <div class="scan-main">
+            <div class="panel" style="flex:1;overflow-y:auto">
+              <div style="color:var(--accent);margin-bottom:12px">💬 DISCORD PARSER</div>
+              <div style="font-size:11px;color:var(--dim);margin-bottom:16px">
+                Парсер Discord серверов: пользователи, каналы, сообщения
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div class="panel" style="display:flex;gap:10px;align-items:center">
+                  <span style="font-size:18px;color:var(--accent)">👤</span>
+                  <div>
+                    <div style="font-size:11px;font-weight:700">User Lookup</div>
+                    <div style="font-size:10px;color:var(--dim)">Поиск пользователя по ID</div>
+                  </div>
+                </div>
+                <div class="panel" style="display:flex;gap:10px;align-items:center">
+                  <span style="font-size:18px;color:var(--accent)">📋</span>
+                  <div>
+                    <div style="font-size:11px;font-weight:700">Guild List</div>
+                    <div style="font-size:10px;color:var(--dim)">Список серверов пользователя</div>
+                  </div>
+                </div>
+                <div class="panel" style="display:flex;gap:10px;align-items:center">
+                  <span style="font-size:18px;color:var(--accent)">💬</span>
+                  <div>
+                    <div style="font-size:11px;font-weight:700">Message Search</div>
+                    <div style="font-size:10px;color:var(--dim)">Поиск сообщений в канале</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     <!-- ── MAP TAB ─────────────────────────────────────────────────────── -->
     {:else if activeTab === "map"}
-      <div class="scroll">
+      <div class="scroll" style="padding:0">
         {#if licenseTier === "FREE"}
           <div class="empty-state" style="margin-top:60px">
             <div class="empty-icon">◈</div>
@@ -801,14 +1197,7 @@
             <button class="btn" style="margin-top:16px" on:click={() => { settingsSection = "subscriptions"; activeTab = "settings"; }}>Обновить подписку</button>
           </div>
         {:else}
-          <div style="font-size:10px;letter-spacing:2px;color:var(--accent);margin-bottom:12px">◈ INTEL MAP</div>
-          {#if mapPins.length === 0}
-            <div class="empty-state"><div class="empty-icon">🗺</div>Запустите OSINT для появления геопинов</div>
-          {:else}
-            {#each mapPins as pin}
-              <div class="panel" style="margin-bottom:8px">★ {pin.label} — {pin.lat}, {pin.lon}</div>
-            {/each}
-          {/if}
+          <div id="map-container" style="width:100%;height:calc(100vh - 80px);"></div>
         {/if}
       </div>
 
@@ -912,7 +1301,7 @@
                 <label class="label">ПАРАМЕТРЫ</label>
                 <div style="display:flex;flex-direction:column;gap:8px">
                   <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim);cursor:pointer">
-                    <input type="checkbox" bind:checked={compactMode} style="accent-color:var(--accent)" /> Компактный режим
+                    <input type="checkbox" checked={compactMode} on:change={toggleCompactMode} style="accent-color:var(--accent)" /> Компактный режим
                   </label>
                   <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim);cursor:pointer">
                     <input type="checkbox" bind:checked={showTimestamps} style="accent-color:var(--accent)" /> Метки времени
@@ -934,6 +1323,54 @@
                   <button class="btn btn-sm btn-danger" on:click={() => { events = []; mapPins = []; }}>🗑 Очистить</button>
                 </div>
               </div>
+
+            <!-- Pricing / Payment -->
+            {:else if settingsSection === "pricing"}
+              <div class="section-title">💳 МОНЕТИЗАЦИЯ</div>
+              <div class="subs-grid">
+                <div class="sub-card">
+                  <div class="sub-name">FREE</div>
+                  <div><span class="sub-price">₽0</span></div>
+                  <div class="sub-requests">2 запроса/день</div>
+                  <ul class="sub-features">
+                    <li class="ok">Базовые OSINT модули</li>
+                    <li class="ok">Социальные сети</li>
+                    <li class="no">AI анализ</li>
+                    <li class="no">Dark Web</li>
+                    <li class="no">Карта угроз</li>
+                  </ul>
+                </div>
+                <div class="sub-card highlight">
+                  <div class="sub-name">PRO</div>
+                  <div><span class="sub-price">₽990</span><span class="sub-period">/мес</span></div>
+                  <div class="sub-requests">1000 запросов/день</div>
+                  <ul class="sub-features">
+                    <li class="ok">Все OSINT модули</li>
+                    <li class="ok">Карта угроз</li>
+                    <li class="ok">Dark Web поиск</li>
+                    <li class="ok">Phone OSINT</li>
+                    <li class="no">AI анализ</li>
+                  </ul>
+                </div>
+                <div class="sub-card">
+                  <div class="sub-name">ELITE</div>
+                  <div><span class="sub-price">₽2490</span><span class="sub-period">/мес</span></div>
+                  <div class="sub-requests">∞ запросов</div>
+                  <ul class="sub-features">
+                    <li class="ok">Все модули</li>
+                    <li class="ok">AI (NVIDIA NIM)</li>
+                    <li class="ok">IntelX</li>
+                    <li class="ok">Приоритет</li>
+                    <li class="ok">Экспорт отчётов</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="divider"></div>
+              <div style="font-size:11px;color:var(--dim)">
+                <strong>Способы оплаты:</strong><br>
+                🇷🇺 CIS: YooKassa, SBP, Lava.ru, USDT<br>
+                🌍 International: Paddle, LemonSqueezy, Stripe, Crypto
+              </div>
             {/if}
           </div>
         </div>
@@ -944,7 +1381,7 @@
       <div class="scroll">
         <div style="text-align:center;margin-bottom:24px">
           <div style="font-size:32px;color:var(--accent);letter-spacing:4px">⬡ RAVEN NEXUS</div>
-          <div style="color:var(--dim);margin-top:4px">Элитная OSINT-система разведки · v0.2.0 · Rust + Tauri + Svelte</div>
+          <div style="color:var(--dim);margin-top:4px">Элитная OSINT-система разведки · v2.8.0 · Rust + Tauri + Svelte</div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
           {#each [

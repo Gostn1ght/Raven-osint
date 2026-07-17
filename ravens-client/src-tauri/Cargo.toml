@@ -1,6 +1,6 @@
 [package]
 name = "ravens-client"
-version = "0.1.0"
+version = "2.8.0"
 edition = "2021"
 authors = ["Ravens Nexus Team"]
 
@@ -35,6 +35,9 @@ regex = "1"
 url = "2"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
+# Security: HMAC signatures + UUID generation
+hmac = "0.12"
+uuid = { version = "1", features = ["v4"] }
 # --- Pins to fix transitive build error (cookie 0.18.1 vs new time) ---
 time = "=0.3.36"
 

@@ -1,13 +1,78 @@
-use crate::{config, hwid, osint};
-use serde::Deserialize;
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAURI COMMANDS — Secure API Client Integration
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ── HWID ─────────────────────────────────────────────────────────────────────
+use crate::hwid;
+use crate::config;
+use crate::osint;
+use serde::Deserialize;
+use std::sync::Arc;
+use tauri::State;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// APP STATE (shared across commands)
+// Используем tokio::sync::Mutex — его Guard является Send
+// ═══════════════════════════════════════════════════════════════════════════════
+
+pub struct AppState {
+    pub api_client: Arc<tokio::sync::Mutex<hwid::SecureApiClient>>,
+    pub hwid: String,
+}
+
+impl AppState {
+    pub fn new(server_url: String) -> Self {
+        Self {
+            api_client: Arc::new(tokio::sync::Mutex::new(hwid::SecureApiClient::new(server_url))),
+            hwid: hwid::get_hwid(),
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HWID COMMAND
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #[tauri::command]
 pub fn get_hwid() -> String {
     hwid::get_hwid()
 }
 
-// ── CONFIG ───────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTH COMMAND — Authenticate with server (JWT + HMAC salt)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tauri::command]
+pub async fn authenticate(
+    token: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let mut client = state.api_client.lock().await;
+    let result = client.authenticate(&token, &state.hwid).await;
+    // MutexGuard автоматически отпускается здесь (выходит из scope)
+    result
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXECUTE COMMAND — Send signed request to server
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[tauri::command]
+pub async fn execute_action(
+    token: String,
+    module: String,
+    session_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = state.api_client.lock().await;
+    let result = client.execute(&module, &token, &state.hwid, session_id.as_deref(), &module).await;
+    // MutexGuard автоматически отпускается здесь
+    result
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIG COMMANDS (encrypted with HWID-derived key)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #[tauri::command]
 pub fn save_config(key: &str, value: &str) -> Result<(), String> {
     let h = hwid::get_hwid();
@@ -44,7 +109,10 @@ fn config_path(key: &str) -> std::path::PathBuf {
     dir
 }
 
-// ── OSINT SCAN ───────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// OSINT SCAN (local execution — for modules that work offline)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #[derive(Debug, Deserialize)]
 pub struct ScanRequest {
     pub target: String,
@@ -89,7 +157,10 @@ pub async fn osint_scan(req: ScanRequest) -> Result<Vec<osint::OsintEvent>, Stri
     Ok(all_events)
 }
 
-// ── SINGLE MODULE ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SINGLE MODULE EXECUTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #[derive(Debug, Deserialize)]
 pub struct ModuleRequest {
     pub module: String,

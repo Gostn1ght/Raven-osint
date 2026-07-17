@@ -244,6 +244,21 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <span class="nav-icon">+</span><span>Создать токен</span>
     </button>
 
+    <div class="nav-section">БЛОКИРОВКИ</div>
+    <button class="nav-btn" onclick="showPage('bans')" data-page="bans">
+      <span class="nav-icon">⛔</span><span>Баны HWID</span>
+    </button>
+
+    <div class="nav-section">DISCORD</div>
+    <button class="nav-btn" onclick="showPage('discord')" data-page="discord">
+      <span class="nav-icon">💬</span><span>Discord State</span>
+    </button>
+
+    <div class="nav-section">МОНЕТИЗАЦИЯ</div>
+    <button class="nav-btn" onclick="showPage('payments')" data-page="payments">
+      <span class="nav-icon">💳</span><span>Платежи</span>
+    </button>
+
     <div class="nav-section">КОНТЕНТ</div>
     <button class="nav-btn" onclick="showPage('news')" data-page="news">
       <span class="nav-icon">📰</span><span>Новости</span>
@@ -319,6 +334,101 @@ tr:hover td { background: rgba(255,255,255,0.02); }
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- ── BANS ───────────────────────────────────────────────────── -->
+    <div class="page" id="page-bans">
+      <div class="page-header">
+        <div class="page-title">⛔ БАНЫ HWID</div>
+        <div class="page-sub">Список заблокированных устройств · Управление разблокировкой</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn" onclick="loadBans()">↻ Обновить</button>
+        <input class="input" id="ban-filter" placeholder="Поиск по HWID / причине..." style="flex:1"
+          oninput="filterBans()" />
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>HWID</th>
+                <th>ПРИЧИНА</th>
+                <th>ДАТА</th>
+                <th>АДМИН</th>
+                <th>СТАТУС</th>
+                <th>ДЕЙСТВИЯ</th>
+              </tr>
+            </thead>
+            <tbody id="bans-tbody">
+              <tr><td colspan="6" style="text-align:center;color:var(--dim);padding:24px">Загрузка...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAYMENTS ────────────────────────────────────────────────── -->
+    <div class="page" id="page-payments">
+      <div class="page-header">
+        <div class="page-title">💳 ПЛАТЕЖИ И ПОДПИСКИ</div>
+        <div class="page-sub">Управление подписками · Валидация ключей</div>
+      </div>
+      <div class="card" style="max-width:500px;margin-bottom:16px">
+        <div class="card-title">ВАЛИДАЦИЯ КЛЮЧА</div>
+        <div class="form-group">
+          <label class="label">ЛИЦЕНЗИОННЫЙ КЛЮЧ</label>
+          <input class="input" id="validate-key-input" placeholder="RVN-XXXXXXXXXXXXXXXX" />
+        </div>
+        <button class="btn btn-primary" onclick="validateKey()">Проверить</button>
+        <div id="validate-result" style="margin-top:12px;font-size:11px;display:none"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ТАРИФЫ</div>
+        <div class="subs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+          <div class="stat-card">
+            <div class="stat-val" style="font-size:18px">FREE</div>
+            <div class="stat-label">₽0 / бесплатно</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:8px">2 запроса/день</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" style="font-size:18px">PRO</div>
+            <div class="stat-label">₽990 / мес</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:8px">1000 запросов/день</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" style="font-size:18px">ELITE</div>
+            <div class="stat-label">₽2490 / мес</div>
+            <div style="font-size:10px;color:var(--dim);margin-top:8px">∞ запросов</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">СПОСОБЫ ОПЛАТЫ</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;font-size:11px;color:var(--dim)">
+          <div>🇷🇺 YooKassa (карты, СБП)</div>
+          <div>🌍 Paddle (международные)</div>
+          <div>₿ USDT TRC-20</div>
+          <div>🍋 LemonSqueezy</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DISCORD STATE (2.7.5) ──────────────────────────────────── -->
+    <div class="page" id="page-discord">
+      <div class="page-header">
+        <div class="page-title">💬 DISCORD STATE</div>
+        <div class="page-sub">Мониторинг Discord серверов в реальном времени</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn" onclick="loadDiscordState()">↻ Обновить</button>
+        <div id="discord-status" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim)">
+          <span class="sess-dot active"></span> <span id="discord-connection-status">Подключение...</span>
+        </div>
+      </div>
+      <div id="discord-guilds" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+        <div style="color:var(--dim);padding:24px">Загрузка...</div>
       </div>
     </div>
 
@@ -431,6 +541,21 @@ tr:hover td { background: rgba(255,255,255,0.02); }
           <label class="toggle" style="margin-bottom:10px">
             <input type="checkbox" id="cn-published" checked /> Опубликовать сразу
           </label>
+
+          <!-- File Upload -->
+          <div class="divider"></div>
+          <div class="card-title">📎 ВЛОЖЕНИЯ</div>
+          <div id="upload-dropzone" style="border:2px dashed rgba(255,255,255,0.1);border-radius:8px;padding:16px;text-align:center;cursor:pointer;margin-bottom:8px"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" 
+            ondragleave="this.style.borderColor='rgba(255,255,255,0.1)'"
+            ondrop="handleDrop(event)"
+            onclick="document.getElementById('file-input').click()">
+            <div style="font-size:11px;color:var(--dim)">📁 Перетащите файлы сюда или нажмите</div>
+            <div style="font-size:9px;color:var(--dim);margin-top:4px">PNG, JPG, GIF, WebP (≤10MB) · MP4, WebM (≤100MB)</div>
+            <input type="file" id="file-input" multiple accept="image/*,video/*" style="display:none" onchange="handleFiles(this.files)" />
+          </div>
+          <div id="upload-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+
           <button class="btn btn-primary" onclick="createNews()" style="width:100%">Опубликовать</button>
           <div id="cn-result" style="margin-top:8px;font-size:11px;display:none"></div>
         </div>
@@ -540,6 +665,7 @@ function doLogin() {
         document.getElementById('app').style.display = 'flex';
         document.getElementById('server-url-display').textContent = serverUrl;
         loadAll();
+        subscribeNews();
       } else {
         document.getElementById('login-err').style.display = 'block';
       }
@@ -560,6 +686,9 @@ function showPage(id) {
   if (id === 'sessions') loadSessions();
   if (id === 'tokens') loadTokens();
   if (id === 'news') loadNews();
+  if (id === 'bans') loadBans();
+  if (id === 'discord') loadDiscordState();
+  if (id === 'payments') loadPayments();
   if (id === 'dashboard') loadStats();
 }
 
@@ -630,8 +759,14 @@ async function banSession(id, banHwid) {
     ? '⚠ Забанить HWID? Устройство больше не сможет запустить приложение.'
     : 'Завершить сессию?';
   if (!confirm(msg)) return;
+  // Ask for reason if banning HWID
+  let reason = "Нарушение правил";
+  if (banHwid) {
+    const input = prompt('Причина бана (необязательно):', 'Нарушение правил');
+    if (input !== null) reason = input || "Нарушение правил";
+  }
   try {
-    const d = await api('POST', `/admin/sessions/${id}/ban`, { ban_hwid: banHwid });
+    const d = await api('POST', `/admin/sessions/${id}/ban`, { ban_hwid: banHwid, reason });
     if (d.ok) {
       toast(banHwid ? '⛔ HWID заблокирован' : '✓ Сессия завершена');
       loadSessions();
@@ -775,6 +910,7 @@ async function createNews() {
     const d = await api('POST', '/admin/news', {
       title, preview_text: preview, full_text: text, author,
       image_url, video_url, media_position, media_rounded, published,
+      attachments: uploadedFiles,
     });
     const el = document.getElementById('cn-result');
     el.style.display = 'block';
@@ -784,7 +920,32 @@ async function createNews() {
     // Clear form
     ['cn-title','cn-preview','cn-text','cn-image','cn-video'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('media-preview-wrap').innerHTML = '<div style="color:var(--dim);font-size:10px">Введите URL картинки</div>';
+    document.getElementById('upload-list').innerHTML = '';
+    uploadedFiles = [];
   } catch { toast('Ошибка', true); }
+}
+
+// ── SSE Live News ──────────────────────────────────────────────────────────────
+function subscribeNews() {
+  const evtSource = new EventSource(serverUrl + '/api/news/stream');
+  evtSource.addEventListener('news', function(e) {
+    try {
+      const item = JSON.parse(e.data);
+      // Prepend to news list if not already present
+      const exists = allTokens.some(n => n.id === item.id);
+      if (!exists) {
+        // Refresh news list if on news page
+        if (document.getElementById('page-news').classList.contains('active')) {
+          loadNews();
+        }
+      }
+    } catch {}
+  });
+  evtSource.onerror = function() {
+    // Silent reconnect
+    evtSource.close();
+    setTimeout(subscribeNews, 5000);
+  };
 }
 
 async function togglePublish(id, published) {
@@ -806,6 +967,193 @@ function previewMedia() {
   } else {
     wrap.innerHTML = '<div style="color:var(--dim);font-size:10px">Введите URL картинки</div>';
   }
+}
+
+// ── Bans ──────────────────────────────────────────────────────────────────────
+let allBans = [];
+
+async function loadBans() {
+  try {
+    allBans = await api('GET', '/admin/bans');
+    renderBans(allBans);
+  } catch { toast('Ошибка загрузки банов', true); }
+}
+
+function renderBans(list) {
+  const tbody = document.getElementById('bans-tbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:24px">Нет банов</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(b => `
+    <tr>
+      <td class="mono" style="font-size:9px" title="${b.hwid}">${b.hwid.substring(0,16)}...</td>
+      <td>${b.reason || '—'}</td>
+      <td>${new Date(b.banned_at).toLocaleDateString('ru-RU')}</td>
+      <td>${b.banned_by || '—'}</td>
+      <td>
+        ${b.unbanned
+          ? `<span class="badge badge-active">РАЗБЛОКИРОВАН</span>`
+          : `<span class="badge badge-banned">ACTIVE</span>`}
+        ${b.unbanned && b.unbanned_by
+          ? `<br><span style="font-size:9px;color:var(--dim)">${b.unbanned_by} · ${b.unbanned_at ? new Date(b.unbanned_at).toLocaleDateString('ru-RU') : ''}</span>`
+          : ''}
+      </td>
+      <td>
+        ${!b.unbanned
+          ? `<button class="btn btn-xs btn-warning" onclick="unbanHwid('${b.hwid}')">Разблокировать</button>`
+          : '<span style="color:var(--dim);font-size:10px">—</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterBans() {
+  const q = document.getElementById('ban-filter').value.toLowerCase();
+  const filtered = allBans.filter(b =>
+    b.hwid.toLowerCase().includes(q) ||
+    (b.reason || '').toLowerCase().includes(q)
+  );
+  renderBans(filtered);
+}
+
+async function unbanHwid(hwid) {
+  if (!confirm('Разблокировать HWID? Устройство снова сможет запустить приложение.')) return;
+  try {
+    const d = await api('POST', '/admin/unban', { hwid, admin_name: 'admin' });
+    if (d.ok) {
+      toast('✓ HWID разблокирован');
+      loadBans();
+      loadStats();
+    } else toast(d.error || 'Ошибка', true);
+  } catch { toast('Ошибка', true); }
+}
+
+// ── Payments ──────────────────────────────────────────────────────────────────
+async function validateKey() {
+  const key = document.getElementById('validate-key-input').value.trim();
+  if (!key) { toast('Введите ключ', true); return; }
+  try {
+    const res = await api('POST', '/api/payment/validate', { key });
+    const el = document.getElementById('validate-result');
+    el.style.display = 'block';
+    if (res.valid) {
+      el.style.color = 'var(--green)';
+      el.innerHTML = `✓ Действующий тариф: <strong>${res.license.tier}</strong><br>
+        Запросов: ${res.license.requests_remaining === 9223372036854775807 ? '∞' : res.license.requests_remaining}<br>
+        Истекает: ${res.license.expires_at || '∞'}`;
+    } else {
+      el.style.color = 'var(--red)';
+      el.textContent = `✗ ${res.error || 'Неверный ключ'}`;
+    }
+  } catch { toast('Ошибка проверки', true); }
+}
+
+async function loadPayments() {
+  // Load stats for payments page
+}
+
+// ── Discord State (2.7.5) ─────────────────────────────────────────────────────
+let discordAutoRefresh: any = null;
+
+async function loadDiscordState() {
+  try {
+    const state = await api('GET', '/api/discord/state');
+    const statusEl = document.getElementById('discord-connection-status');
+    const dotEl = document.querySelector('#discord-status .sess-dot');
+    
+    if (state.connected) {
+      statusEl.textContent = `Подключено · ${state.guilds?.length || 0} серверов`;
+      dotEl.className = 'sess-dot active';
+    } else {
+      statusEl.textContent = state.bot_token_configured ? 'Отключено' : 'Бот не настроен';
+      dotEl.className = 'sess-dot banned';
+    }
+    
+    const grid = document.getElementById('discord-guilds');
+    if (!state.guilds || state.guilds.length === 0) {
+      grid.innerHTML = '<div style="color:var(--dim);padding:24px">Нет доступных серверов. Добавьте бота на сервер.</div>';
+      return;
+    }
+    
+    grid.innerHTML = state.guilds.map(g => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <div style="padding:12px">
+          <div style="font-size:11px;font-weight:700;margin-bottom:4px">${g.name}</div>
+          <div style="font-size:9px;color:var(--dim);margin-bottom:8px">ID: ${g.id}</div>
+          <div style="display:flex;gap:12px;font-size:10px;color:var(--dim)">
+            <span>👥 ${g.member_count} участников</span>
+            <span>📋 ${g.roles?.length || 0} ролей</span>
+            <span>💬 ${g.channels?.length || 0} каналов</span>
+          </div>
+          <div style="margin-top:8px;font-size:9px;color:var(--dim)">
+            Владелец: ${g.owner_id}<br>
+            Обновлено: ${g.updated_at ? new Date(g.updated_at).toLocaleString('ru-RU') : '—'}
+          </div>
+        </div>
+      </div>
+    `).join('');
+    
+    // Auto-refresh every 30s
+    if (discordAutoRefresh) clearInterval(discordAutoRefresh);
+    discordAutoRefresh = setInterval(loadDiscordState, 30000);
+  } catch (e) {
+    document.getElementById('discord-guilds').innerHTML = '<div style="color:var(--dim);padding:24px">Ошибка загрузки Discord state</div>';
+  }
+}
+
+// ── File Upload ────────────────────────────────────────────────────────────────
+let uploadedFiles = [];
+
+async function uploadFiles(files) {
+  const formData = new FormData();
+  for (const f of files) {
+    formData.append('file', f);
+  }
+  try {
+    const res = await fetch(serverUrl + '/admin/upload', {
+      method: 'POST',
+      headers: { 'x-admin-secret': adminSecret },
+      body: formData,
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toast('✓ Файлы загружены');
+      return data.files;
+    } else {
+      toast(data.error || 'Ошибка загрузки', true);
+      return [];
+    }
+  } catch {
+    toast('Ошибка загрузки', true);
+    return [];
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+  handleFiles(e.dataTransfer.files);
+}
+
+async function handleFiles(files) {
+  if (!files.length) return;
+  const list = document.getElementById('upload-list');
+  for (const f of files) {
+    const div = document.createElement('div');
+    div.style.cssText = 'font-size:10px;padding:4px 8px;background:rgba(0,0,0,0.3);border-radius:4px;display:flex;justify-content:space-between;align-items:center';
+    div.innerHTML = `<span>${f.name} (${(f.size/1024).toFixed(1)}KB)</span><span style="color:var(--dim)">загрузка...</span>`;
+    list.appendChild(div);
+  }
+  const uploaded = await uploadFiles(Array.from(files));
+  uploadedFiles = uploadedFiles.concat(uploaded);
+  list.innerHTML = '';
+  uploadedFiles.forEach((uf, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'font-size:10px;padding:4px 8px;background:rgba(0,0,0,0.3);border-radius:4px;display:flex;justify-content:space-between;align-items:center';
+    div.innerHTML = `<span>📎 ${uf.url.split('/').pop()}</span><span style="color:var(--accent);cursor:pointer" onclick="uploadedFiles.splice(${i},1);this.parentElement.remove()">✕</span>`;
+    list.appendChild(div);
+  });
 }
 </script>
 </body>

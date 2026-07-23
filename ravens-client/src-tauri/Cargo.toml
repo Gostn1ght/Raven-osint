@@ -31,8 +31,6 @@ hex = "0.4"
 aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"
-regex = "1"
-url = "2"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 # Security: HMAC signatures + UUID generation

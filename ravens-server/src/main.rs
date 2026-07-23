@@ -1,12 +1,17 @@
 // ravens-server/src/main.rs
-// Ravens Nexus License Server — Rust + Axum
-// Features: HWID binding, token rebind, sessions, ban by HWID, news, subscriptions, discord gateway
-// Security: JWT + HMAC signatures + Rate limiting + Anti-replay
+// Ravens Nexus License + OSINT Server — Rust + Axum
+// The server is the single source of truth: it owns licensing (tokens/account keys,
+// HWID binding, sessions, bans, tiers, quotas) AND runs the OSINT engine itself, so
+// the desktop client is a thin front-end that only renders server-produced results.
+//
+// Security: HMAC-signed session tokens · signed responses · per-request signatures
+//           · anti-replay (timestamp + one-time nonce) · per-HWID rate limiting.
 
 mod discord;
 mod payment;
-mod db;
+mod osint;
 mod security;
+mod store;
 
 use axum::{
     extract::{Path, State, Multipart},
@@ -21,9 +26,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, RwLock},
     convert::Infallible,
     path::Path as StdPath,
+    sync::{Arc, OnceLock, RwLock},
 };
 use uuid::Uuid;
 use tower_http::{cors::CorsLayer, trace::TraceLayer, services::ServeDir};
@@ -34,8 +39,28 @@ use tokio::io::AsyncWriteExt;
 const ADMIN_UI_HTML: &str = include_str!("../ui/admin.html");
 
 // ── Config ───────────────────────────────────────────────────────────────────
-const ADMIN_SECRET: &str = "M27361HD652hs76766yde28hjdhj87w4h32hoi_sifu849wu3j4897riuyfgihfj__MAGAY__uhfuyqe3r8y9qr389YQR390uredqwfUIOJEAWFpidor276374R627QRDHIUAR";
 const SERVER_PORT: u16 = 3000;
+const STATE_FILE: &str = "data/ravens_state.json";
+
+/// Admin secret — from `RAVENS_ADMIN_SECRET`, or a random per-process value that is
+/// printed to the log at startup. There is intentionally NO hard-coded production key.
+fn admin_secret() -> &'static str {
+    static S: OnceLock<String> = OnceLock::new();
+    S.get_or_init(|| {
+        match std::env::var("RAVENS_ADMIN_SECRET") {
+            Ok(v) if v.len() >= 8 && v != "RAVENS_ADMIN_SECRET_CHANGE_ME" => v,
+            _ => {
+                use rand::RngCore;
+                let mut b = [0u8; 24];
+                rand::thread_rng().fill_bytes(&mut b);
+                let gen = hex::encode(b);
+                tracing::warn!("RAVENS_ADMIN_SECRET not set — generated a random admin secret for this run:");
+                tracing::warn!("    RAVENS_ADMIN_SECRET = {}", gen);
+                gen
+            }
+        }
+    })
+}
 
 // ── Tier ─────────────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -48,28 +73,37 @@ pub enum Tier {
 }
 
 impl Tier {
-    pub fn monthly_requests(&self) -> i64 {
+    pub fn daily_requests(&self) -> i64 {
         match self {
-            Tier::Free  => 2,
-            Tier::Pro   => 10,
+            Tier::Free => 2,
+            Tier::Pro => 1000,
             Tier::Elite => -1,
             Tier::Admin => -1,
         }
     }
     pub fn name(&self) -> &str {
         match self {
-            Tier::Free  => "FREE",
-            Tier::Pro   => "PRO",
+            Tier::Free => "FREE",
+            Tier::Pro => "PRO",
             Tier::Elite => "ELITE",
             Tier::Admin => "ADMIN",
         }
     }
     pub fn allowed_modules(&self) -> Vec<&str> {
         match self {
-            Tier::Free  => vec!["social", "ip_geo", "whois"],
-            Tier::Pro   => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone"],
-            Tier::Elite => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "intelx", "ai"],
-            Tier::Admin => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "intelx", "ai"],
+            Tier::Free => vec!["social", "ip_geo", "whois"],
+            Tier::Pro => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone"],
+            Tier::Elite | Tier::Admin => vec![
+                "social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "intelx", "ai",
+            ],
+        }
+    }
+    pub fn from_str(s: &str) -> Tier {
+        match s.to_lowercase().as_str() {
+            "pro" => Tier::Pro,
+            "elite" => Tier::Elite,
+            "admin" => Tier::Admin,
+            _ => Tier::Free,
         }
     }
 }
@@ -123,6 +157,7 @@ pub struct NewsItem {
     pub created_at: DateTime<Utc>,
     pub published: bool,
     pub author: String,
+    #[serde(default)]
     pub attachments: Vec<UploadedFile>,
 }
 
@@ -148,7 +183,7 @@ impl License {
             "RVN-{}",
             Uuid::new_v4().to_string().to_uppercase().replace('-', "").chars().take(16).collect::<String>()
         );
-        let limit = tier.monthly_requests();
+        let limit = tier.daily_requests();
         let expires_at = expires_days.map(|d| Utc::now() + Duration::days(d));
         Self {
             token, tier, hwid: None,
@@ -168,13 +203,25 @@ impl License {
     }
 }
 
-
 fn ensure_daily_reset(lic: &mut License) {
     let today = Utc::now().format("%Y-%m-%d").to_string();
     if lic.last_reset_day != today {
         lic.last_reset_day = today;
         lic.requests_used = 0;
     }
+}
+
+// ── Persistence snapshot ───────────────────────────────────────────────────────
+#[derive(Serialize, Deserialize, Default)]
+struct Snapshot {
+    #[serde(default)]
+    licenses: Vec<License>,
+    #[serde(default)]
+    banned_hwids: Vec<String>,
+    #[serde(default)]
+    ban_records: Vec<BanRecord>,
+    #[serde(default)]
+    news: Vec<NewsItem>,
 }
 
 // ── App State ─────────────────────────────────────────────────────────────────
@@ -187,8 +234,11 @@ pub struct AppState {
     pub news: RwLock<Vec<NewsItem>>,
     pub uploads: RwLock<Vec<UploadedFile>>,
     pub discord_gateway: Arc<discord::DiscordGateway>,
-    pub db: Option<db::SharedDatabase>,
+    pub store: store::Store,
+    pub rate_limiter: security::RateLimiter,
+    pub nonce_cache: security::NonceCache,
 }
+
 impl Default for AppState {
     fn default() -> Self {
         Self {
@@ -200,8 +250,40 @@ impl Default for AppState {
             news: Default::default(),
             uploads: Default::default(),
             discord_gateway: Arc::new(discord::DiscordGateway::new()),
-            db: None,
+            store: store::Store::new(STATE_FILE),
+            rate_limiter: security::RateLimiter::default(),
+            nonce_cache: security::NonceCache::default(),
         }
+    }
+}
+
+impl AppState {
+    /// Builds a persistable snapshot (clones data out; holds no locks afterwards).
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            licenses: self.licenses.read().unwrap().values().cloned().collect(),
+            banned_hwids: self.banned_hwids.read().unwrap().iter().cloned().collect(),
+            ban_records: self.ban_records.read().unwrap().clone(),
+            news: self.news.read().unwrap().clone(),
+        }
+    }
+    /// Persists the current snapshot to disk. Callers must NOT hold any state lock.
+    fn persist(&self) {
+        self.store.save(&self.snapshot());
+    }
+    /// Loads a snapshot into state and rebuilds the HWID index.
+    fn load_snapshot(&self, snap: Snapshot) {
+        let mut idx = self.hwid_index.write().unwrap();
+        let mut licenses = self.licenses.write().unwrap();
+        for lic in snap.licenses {
+            if let Some(h) = &lic.hwid {
+                idx.insert(h.clone(), lic.token.clone());
+            }
+            licenses.insert(lic.token.clone(), lic);
+        }
+        *self.banned_hwids.write().unwrap() = snap.banned_hwids.into_iter().collect();
+        *self.ban_records.write().unwrap() = snap.ban_records;
+        *self.news.write().unwrap() = snap.news;
     }
 }
 type SharedState = Arc<AppState>;
@@ -226,6 +308,20 @@ fn env_or(key: &str, default: &str) -> String {
 fn env_or_u16(key: &str, default: u16) -> u16 {
     std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
+fn hdr<'a>(h: &'a HeaderMap, k: &str) -> &'a str {
+    h.get(k).and_then(|v| v.to_str().ok()).unwrap_or("")
+}
+
+/// Wraps a body in the signed response envelope the client verifies.
+fn signed_envelope(body: serde_json::Value) -> Json<serde_json::Value> {
+    let nonce = Uuid::new_v4().to_string().split('-').next().unwrap_or("").to_string();
+    let signature = security::sign_response(&body, &nonce);
+    Json(serde_json::json!({
+        "header": { "timestamp": Utc::now().timestamp(), "nonce": nonce, "status": 200 },
+        "body": body,
+        "signature": signature,
+    }))
+}
 
 // ── Admin auth middleware ─────────────────────────────────────────────────────
 async fn admin_auth(
@@ -233,9 +329,8 @@ async fn admin_auth(
     req: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> impl IntoResponse {
-    let auth = headers.get("x-admin-secret").and_then(|v| v.to_str().ok()).unwrap_or("");
-    let secret = env_or("RAVENS_ADMIN_SECRET", ADMIN_SECRET);
-    if !ct_eq(auth, &secret) {
+    let auth = hdr(&headers, "x-admin-secret");
+    if !ct_eq(auth, admin_secret()) {
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"Unauthorized"}))).into_response();
     }
     next.run(req).await
@@ -256,6 +351,16 @@ pub struct ConsumeRequest {
     pub hwid: String,
     pub module: String,
     pub session_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct OsintRunRequest {
+    pub token: String,
+    pub hwid: String,
+    pub module: String,
+    pub target: String,
+    pub session_id: Option<String>,
+    pub findings: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -283,6 +388,8 @@ pub struct CreateNewsRequest {
     pub media_rounded: Option<bool>,
     pub published: Option<bool>,
     pub author: Option<String>,
+    #[serde(default)]
+    pub attachments: Option<Vec<UploadedFile>>,
 }
 
 // ── LicenseInfo ───────────────────────────────────────────────────────────────
@@ -311,13 +418,13 @@ async fn check_hwid_ban(
     State(state): State<SharedState>,
     Json(req): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let hwid = hash_hwid(req["hwid"].as_str().unwrap_or(""));
-    if hwid.is_empty() {
+    let raw = req["hwid"].as_str().unwrap_or("");
+    if raw.is_empty() {
         return Json(serde_json::json!({"banned":false}));
     }
+    let hwid = hash_hwid(raw);
     let banned = state.banned_hwids.read().unwrap();
     if banned.contains(&hwid) {
-        // Find the ban record for details
         let records = state.ban_records.read().unwrap();
         if let Some(record) = records.iter().find(|r| r.hwid == hwid && !r.unbanned) {
             return Json(serde_json::json!({
@@ -336,19 +443,20 @@ async fn activate_license(
     Json(req): Json<ActivateRequest>,
 ) -> impl IntoResponse {
     let token = req.token.trim().to_uppercase();
-    let hwid = hash_hwid(&req.hwid);
+    let raw_hwid = req.hwid.trim().to_string();
+    if raw_hwid.is_empty() {
+        return Json(serde_json::json!({"ok":false,"error":"HWID обязателен"}));
+    }
+    let hwid = hash_hwid(&raw_hwid);
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY CHECK: HWID ban list
-    // ═══════════════════════════════════════════════════════════════════════════
+    // SECURITY: HWID ban list
     {
         let banned = state.banned_hwids.read().unwrap();
         if banned.contains(&hwid) {
             let records = state.ban_records.read().unwrap();
             if let Some(record) = records.iter().find(|r| r.hwid == hwid && !r.unbanned) {
                 return Json(serde_json::json!({
-                    "ok":false,
-                    "banned": true,
+                    "ok":false, "banned": true,
                     "error":"Устройство заблокировано администратором",
                     "reason": record.reason,
                     "date": record.banned_at.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -358,54 +466,46 @@ async fn activate_license(
         }
     }
 
-    let mut licenses = state.licenses.write().unwrap();
-    let license = match licenses.get_mut(&token) {
-        Some(l) => l,
-        None => return Json(serde_json::json!({"ok":false,"error":"Токен не найден"})),
+    let (tier, remaining, expires, allowed) = {
+        let mut licenses = state.licenses.write().unwrap();
+        let license = match licenses.get_mut(&token) {
+            Some(l) => l,
+            None => return Json(serde_json::json!({"ok":false,"error":"Токен не найден"})),
+        };
+        ensure_daily_reset(license);
+        if !license.active {
+            return Json(serde_json::json!({"ok":false,"error":"Токен деактивирован"}));
+        }
+        if license.is_expired() {
+            return Json(serde_json::json!({"ok":false,"error":"Токен истёк"}));
+        }
+        if license.hwid_banned {
+            return Json(serde_json::json!({"ok":false,"error":"Устройство заблокировано"}));
+        }
+        // SECURITY: HWID binding (first activation binds HWID)
+        if license.hwid.is_none() {
+            license.hwid = Some(hwid.clone());
+            state.hwid_index.write().unwrap().insert(hwid.clone(), token.clone());
+        } else if license.hwid.as_deref() != Some(&hwid) {
+            security::log_action(&token, "activate_failed", "hwid_mismatch", "blocked",
+                req.ip.as_deref().unwrap_or("unknown"), &hwid);
+            return Json(serde_json::json!({"ok":false,"error":"Токен привязан к другому устройству"}));
+        }
+        let tier = license.tier.clone();
+        let remaining = license.requests_remaining();
+        let expires = license.expires_at.map(|d| d.format("%Y-%m-%d").to_string());
+        let allowed: Vec<String> = tier.allowed_modules().iter().map(|s| s.to_string()).collect();
+        (tier, remaining, expires, allowed)
     };
+    state.persist();
 
-    ensure_daily_reset(license);
-
-    if !license.active {
-        return Json(serde_json::json!({"ok":false,"error":"Токен деактивирован"}));
-    }
-    if license.is_expired() {
-        return Json(serde_json::json!({"ok":false,"error":"Токен истёк"}));
-    }
-    if license.hwid_banned {
-        return Json(serde_json::json!({"ok":false,"error":"Устройство заблокировано"}));
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY CHECK: HWID binding (first activation binds HWID)
-    // ═══════════════════════════════════════════════════════════════════════════
-    if license.hwid.is_none() {
-        license.hwid = Some(hwid.clone());
-        state.hwid_index.write().unwrap().insert(hwid.clone(), token.clone());
-    } else if license.hwid.as_deref() != Some(&hwid) {
-        // HWID mismatch — token bound to different hardware
-        security::log_action(
-            &token, "activate_failed", &format!("hwid_mismatch: {}", hwid),
-            "blocked", req.ip.as_deref().unwrap_or("unknown"), &hwid,
-        );
-        return Json(serde_json::json!({"ok":false,"error":"Токен привязан к другому устройству"}));
-    }
-
-    let tier = license.tier.clone();
-    let remaining = license.requests_remaining();
-    let expires = license.expires_at.map(|d| d.format("%Y-%m-%d").to_string());
-    let allowed: Vec<String> = tier.allowed_modules().iter().map(|s| s.to_string()).collect();
-    drop(licenses);
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY: Generate JWT with HWID binding + HMAC salt
-    // ═══════════════════════════════════════════════════════════════════════════
+    // SECURITY: issue HWID-bound session token + per-session salt
     let session_id = Uuid::new_v4().to_string();
     let (jwt_token, hmac_salt) = security::generate_jwt(&hwid, &session_id);
-    
+
     state.sessions.write().unwrap().insert(session_id.clone(), Session {
         id: session_id.clone(),
-        token: jwt_token.clone(),
+        token: token.clone(),
         hwid: hwid.clone(),
         ip: req.ip.unwrap_or_else(|| "unknown".into()),
         last_seen: Utc::now(),
@@ -414,17 +514,9 @@ async fn activate_license(
         banned: false,
     });
 
-    // Log successful activation
-    security::log_action(
-        &token, "activate", &format!("tier:{}", tier.name()),
-        "success", req.ip.as_deref().unwrap_or("unknown"), &hwid,
-    );
+    security::log_action(&token, "activate", &format!("tier:{}", tier.name()), "success", "", &hwid);
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY: Sign the response with HMAC
-    // ═══════════════════════════════════════════════════════════════════════════
-    let response_nonce = Uuid::new_v4().to_string().split('-').next().unwrap().to_string();
-    let response_body = serde_json::json!({
+    let body = serde_json::json!({
         "ok": true,
         "tier": tier.name(),
         "requests_remaining": remaining,
@@ -432,130 +524,151 @@ async fn activate_license(
         "allowed_modules": allowed,
         "session_id": session_id,
     });
-    let response_signature = security::sign_response(&response_body, &response_nonce);
-
+    let nonce = Uuid::new_v4().to_string().split('-').next().unwrap_or("").to_string();
+    let signature = security::sign_response(&body, &nonce);
     Json(serde_json::json!({
-        "header": {
-            "timestamp": chrono::Utc::now().timestamp(),
-            "nonce": response_nonce,
-            "status": 200,
-        },
-        "body": response_body,
-        "signature": response_signature,
-        // Security credentials for client
+        "header": { "timestamp": Utc::now().timestamp(), "nonce": nonce, "status": 200 },
+        "body": body,
+        "signature": signature,
         "jwt": jwt_token,
         "hmac_salt": hmac_salt,
     }))
 }
 
+/// Shared license gate: verifies a session's security context and consumes one quota
+/// unit for `module`. Returns Ok(remaining) or Err(json error body).
+fn authorize_and_consume(
+    state: &SharedState,
+    headers: &HeaderMap,
+    token: &str,
+    raw_hwid: &str,
+    module: &str,
+    session_id: &Option<String>,
+) -> Result<i64, (StatusCode, serde_json::Value)> {
+    let hwid = hash_hwid(raw_hwid);
+
+    // 1. Session-token security context
+    let jwt = hdr(headers, "x-auth-token");
+    let ts: u64 = hdr(headers, "x-timestamp").parse().unwrap_or(0);
+    let nonce = hdr(headers, "x-nonce");
+    let sig = hdr(headers, "x-signature");
+
+    if !security::timestamp_is_fresh(ts) {
+        return Err((StatusCode::UNAUTHORIZED, serde_json::json!({"ok":false,"error":"Запрос устарел или недействителен (anti-replay)"})));
+    }
+    if !state.nonce_cache.register(nonce) {
+        return Err((StatusCode::UNAUTHORIZED, serde_json::json!({"ok":false,"error":"Повторное использование nonce (replay)"})));
+    }
+    let claims = security::verify_jwt(jwt)
+        .map_err(|e| (StatusCode::UNAUTHORIZED, serde_json::json!({"ok":false,"error":format!("Недействительный сессионный токен: {}", e)})))?;
+    if claims.hwid != hwid {
+        security::log_action(token, "osint_failed", "hwid_token_mismatch", "blocked", "", &hwid);
+        return Err((StatusCode::UNAUTHORIZED, serde_json::json!({"ok":false,"error":"HWID не совпадает с токеном"})));
+    }
+    if !security::verify_request_signature(raw_hwid, nonce, ts, sig, &claims.salt) {
+        security::log_action(token, "osint_failed", "bad_signature", "blocked", "", &hwid);
+        return Err((StatusCode::UNAUTHORIZED, serde_json::json!({"ok":false,"error":"Неверная подпись запроса"})));
+    }
+
+    // 2. Rate limit (per HWID)
+    if !state.rate_limiter.check(&hwid) {
+        return Err((StatusCode::TOO_MANY_REQUESTS, serde_json::json!({"ok":false,"error":"Превышен лимит запросов, попробуйте позже"})));
+    }
+
+    // 3. Bans
+    if let Some(sid) = session_id {
+        if let Some(sess) = state.sessions.read().unwrap().get(sid) {
+            if sess.banned {
+                return Err((StatusCode::FORBIDDEN, serde_json::json!({"ok":false,"error":"Сессия заблокирована"})));
+            }
+        }
+    }
+    if state.banned_hwids.read().unwrap().contains(&hwid) {
+        return Err((StatusCode::FORBIDDEN, serde_json::json!({"ok":false,"error":"Устройство заблокировано"})));
+    }
+
+    // 4. License checks + quota consume
+    let remaining = {
+        let mut licenses = state.licenses.write().unwrap();
+        let license = licenses.get_mut(token)
+            .ok_or((StatusCode::NOT_FOUND, serde_json::json!({"ok":false,"error":"Токен не найден"})))?;
+        ensure_daily_reset(license);
+        if !license.active || license.is_expired() {
+            return Err((StatusCode::FORBIDDEN, serde_json::json!({"ok":false,"error":"Лицензия недействительна"})));
+        }
+        if license.hwid.as_deref() != Some(&hwid) {
+            return Err((StatusCode::FORBIDDEN, serde_json::json!({"ok":false,"error":"HWID не совпадает"})));
+        }
+        let canon = osint::canonical_module(module);
+        if !license.tier.allowed_modules().contains(&canon) {
+            return Err((StatusCode::FORBIDDEN, serde_json::json!({"ok":false,"error":"Модуль недоступен на вашем тарифе"})));
+        }
+        if license.requests_limit != -1 && license.requests_used >= license.requests_limit {
+            return Err((StatusCode::PAYMENT_REQUIRED, serde_json::json!({"ok":false,"error":"Лимит запросов исчерпан"})));
+        }
+        if license.requests_limit != -1 {
+            license.requests_used += 1;
+        }
+        license.requests_remaining()
+    };
+
+    // Touch session last_seen
+    if let Some(sid) = session_id {
+        if let Some(sess) = state.sessions.write().unwrap().get_mut(sid) {
+            sess.last_seen = Utc::now();
+        }
+    }
+    Ok(remaining)
+}
+
+/// Legacy quota-only endpoint (kept for compatibility). Prefer /api/osint/run.
 async fn consume_request(
     State(state): State<SharedState>,
     headers: HeaderMap,
     Json(req): Json<ConsumeRequest>,
 ) -> impl IntoResponse {
     let token = req.token.trim().to_uppercase();
-    let hwid = hash_hwid(&req.hwid);
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY: Verify JWT from header (if provided)
-    // ═══════════════════════════════════════════════════════════════════════════
-    let jwt_token = headers.get("x-auth-token").and_then(|v| v.to_str().ok()).unwrap_or("");
-    let request_nonce = headers.get("x-nonce").and_then(|v| v.to_str().ok()).unwrap_or("");
-    let request_signature = headers.get("x-signature").and_then(|v| v.to_str().ok()).unwrap_or("");
-    
-    if !jwt_token.is_empty() {
-        // Verify JWT and extract claims
-        match security::verify_jwt(jwt_token) {
-            Ok(claims) => {
-                // HWID must match JWT
-                if claims.hwid != hwid {
-                    security::log_action(&token, "consume_failed", "hwid_jwt_mismatch", "blocked", "", &hwid);
-                    return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"HWID не совпадает с JWT"}));
-                }
-            }
-            Err(e) => {
-                security::log_action(&token, "consume_failed", &format!("jwt_invalid: {}", e), "blocked", "", &hwid);
-                return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"Невалидный JWT токен"}));
-            }
+    match authorize_and_consume(&state, &headers, &token, req.hwid.trim(), &req.module, &req.session_id) {
+        Ok(remaining) => {
+            state.persist();
+            security::log_action(&token, "consume", &req.module, "success", "", "");
+            signed_envelope(serde_json::json!({"ok":true,"requests_remaining":remaining})).into_response()
         }
+        Err((code, body)) => (code, Json(body)).into_response(),
+    }
+}
+
+/// Authenticated OSINT execution — the server runs the module and returns results.
+async fn osint_run(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Json(req): Json<OsintRunRequest>,
+) -> impl IntoResponse {
+    let token = req.token.trim().to_uppercase();
+    let target = req.target.trim().to_string();
+    if target.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"ok":false,"error":"Пустая цель"}))).into_response();
+    }
+    if target.len() > 256 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"ok":false,"error":"Слишком длинная цель"}))).into_response();
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY: Check session ban status
-    // ═══════════════════════════════════════════════════════════════════════════
-    if let Some(sid) = &req.session_id {
-        let sessions = state.sessions.read().unwrap();
-        if let Some(sess) = sessions.get(sid) {
-            if sess.banned {
-                return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"Сессия заблокирована"}));
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY: Check HWID ban list
-    // ═══════════════════════════════════════════════════════════════════════════
-    {
-        let banned = state.banned_hwids.read().unwrap();
-        if banned.contains(&hwid) {
-            return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"Устройство заблокировано"}));
-        }
-    }
-
-    let mut licenses = state.licenses.write().unwrap();
-    let license = match licenses.get_mut(&token) {
-        Some(l) => l,
-        None => return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"Токен не найден"})),
+    let remaining = match authorize_and_consume(&state, &headers, &token, req.hwid.trim(), &req.module, &req.session_id) {
+        Ok(r) => r,
+        Err((code, body)) => return (code, Json(body)).into_response(),
     };
+    state.persist();
 
-    ensure_daily_reset(license);
+    let findings = req.findings.unwrap_or_default();
+    let events = osint::run_module(&req.module, &target, &findings).await;
+    security::log_action(&token, "osint", &req.module, "success", "", "");
 
-    if !license.active || license.is_expired() {
-        return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"Лицензия недействительна"}));
-    }
-    if license.hwid.as_deref() != Some(&hwid) {
-        return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"HWID не совпадает"}));
-    }
-
-    let allowed = license.tier.allowed_modules();
-    if !allowed.contains(&req.module.as_str()) {
-        return Json(serde_json::json!({"ok":false,"requests_remaining":license.requests_remaining(),"error":"Модуль недоступен на вашем тарифе"}));
-    }
-
-    if license.requests_limit != -1 && license.requests_used >= license.requests_limit {
-        return Json(serde_json::json!({"ok":false,"requests_remaining":0,"error":"Лимит запросов исчерпан"}));
-    }
-    if license.requests_limit != -1 { license.requests_used += 1; }
-    let remaining = license.requests_remaining();
-    drop(licenses);
-
-    if let Some(sid) = &req.session_id {
-        if let Ok(mut sessions) = state.sessions.write() {
-            if let Some(sess) = sessions.get_mut(sid) {
-                sess.last_seen = Utc::now();
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SECURITY: Sign the response with HMAC
-    // ═══════════════════════════════════════════════════════════════════════════
-    let response_nonce = Uuid::new_v4().to_string().split('-').next().unwrap().to_string();
-    let response_body = serde_json::json!({"ok":true,"requests_remaining":remaining});
-    let response_signature = security::sign_response(&response_body, &response_nonce);
-
-    // Log the action
-    security::log_action(&token, "consume", &req.module, "success", "", &hwid);
-
-    Json(serde_json::json!({
-        "header": {
-            "timestamp": chrono::Utc::now().timestamp(),
-            "nonce": response_nonce,
-            "status": 200,
-        },
-        "body": response_body,
-        "signature": response_signature,
-    }))
+    signed_envelope(serde_json::json!({
+        "ok": true,
+        "requests_remaining": remaining,
+        "module": osint::canonical_module(&req.module),
+        "events": events,
+    })).into_response()
 }
 
 async fn license_status(
@@ -580,24 +693,26 @@ async fn rebind_token(
     State(state): State<SharedState>,
     Json(req): Json<RebindRequest>,
 ) -> impl IntoResponse {
-    let secret = env_or("RAVENS_ADMIN_SECRET", ADMIN_SECRET);
-    if !ct_eq(&req.admin_secret, &secret) {
+    if !ct_eq(&req.admin_secret, admin_secret()) {
         return Json(serde_json::json!({"ok":false,"error":"Неверный секрет"}));
     }
     let token = req.token.trim().to_uppercase();
     let new_hwid = hash_hwid(&req.new_hwid);
-    let mut licenses = state.licenses.write().unwrap();
-    match licenses.get_mut(&token) {
-        Some(l) => {
-            if let Some(old) = &l.hwid {
-                state.hwid_index.write().unwrap().remove(old);
+    {
+        let mut licenses = state.licenses.write().unwrap();
+        match licenses.get_mut(&token) {
+            Some(l) => {
+                if let Some(old) = &l.hwid {
+                    state.hwid_index.write().unwrap().remove(old);
+                }
+                l.hwid = Some(new_hwid.clone());
+                state.hwid_index.write().unwrap().insert(new_hwid, token.clone());
             }
-            l.hwid = Some(new_hwid.clone());
-            state.hwid_index.write().unwrap().insert(new_hwid, token.clone());
-            Json(serde_json::json!({"ok":true,"message":"HWID успешно переназначен"}))
+            None => return Json(serde_json::json!({"ok":false,"error":"Токен не найден"})),
         }
-        None => Json(serde_json::json!({"ok":false,"error":"Токен не найден"})),
     }
+    state.persist();
+    Json(serde_json::json!({"ok":true,"message":"HWID успешно переназначен"}))
 }
 
 // ── File Upload ───────────────────────────────────────────────────────────────
@@ -608,16 +723,8 @@ const ALLOWED_VIDEO_TYPES: &[&str] = &["video/mp4", "video/webm", "video/quickti
 
 async fn upload_file(
     State(state): State<SharedState>,
-    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
-    // Verify admin secret
-    let auth = headers.get("x-admin-secret").and_then(|v| v.to_str().ok()).unwrap_or("");
-    let secret = env_or("RAVENS_ADMIN_SECRET", ADMIN_SECRET);
-    if !ct_eq(auth, &secret) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"Unauthorized"}))).into_response();
-    }
-
     let mut saved_files: Vec<UploadedFile> = Vec::new();
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
@@ -628,36 +735,20 @@ async fn upload_file(
         };
         let size = data.len() as u64;
 
-        // Validate type and size
         let is_image = ALLOWED_IMAGE_TYPES.contains(&content_type.as_str());
         let is_video = ALLOWED_VIDEO_TYPES.contains(&content_type.as_str());
-        if !is_image && !is_video {
-            continue;
-        }
-        if is_image && size > MAX_IMAGE_SIZE {
-            continue;
-        }
-        if is_video && size > MAX_VIDEO_SIZE {
-            continue;
-        }
+        if !is_image && !is_video { continue; }
+        if is_image && size > MAX_IMAGE_SIZE { continue; }
+        if is_video && size > MAX_VIDEO_SIZE { continue; }
 
-        // Generate filename
         let ext = match content_type.as_str() {
-            "image/png" => "png",
-            "image/jpeg" => "jpg",
-            "image/gif" => "gif",
-            "image/webp" => "webp",
-            "video/mp4" => "mp4",
-            "video/webm" => "webm",
-            "video/quicktime" => "mov",
-            _ => "bin",
+            "image/png" => "png", "image/jpeg" => "jpg", "image/gif" => "gif", "image/webp" => "webp",
+            "video/mp4" => "mp4", "video/webm" => "webm", "video/quicktime" => "mov", _ => "bin",
         };
         let filename = format!("{}.{}", Uuid::new_v4(), ext);
         let uploads_dir = StdPath::new("uploads");
         let _ = tokio_fs::create_dir_all(uploads_dir).await;
         let filepath = uploads_dir.join(&filename);
-
-        // Write file
         if let Ok(mut file) = tokio_fs::File::create(&filepath).await {
             let _ = file.write_all(&data).await;
         }
@@ -676,14 +767,12 @@ async fn upload_file(
     if saved_files.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"No valid files uploaded"}))).into_response();
     }
-
     (StatusCode::OK, Json(serde_json::json!({"ok":true,"files":saved_files}))).into_response()
 }
 
 // ── SSE for live news ─────────────────────────────────────────────────────────
 async fn news_sse(State(state): State<SharedState>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let news = state.news.read().unwrap();
-    let events = news.clone();
+    let events = state.news.read().unwrap().clone();
     let stream = stream::iter(events.into_iter().map(|item| {
         let json = serde_json::to_string(&item).unwrap_or_default();
         Ok(Event::default().data(json).event("news"))
@@ -696,16 +785,16 @@ async fn news_sse(State(state): State<SharedState>) -> Sse<impl Stream<Item = Re
 // ── Health Check ──────────────────────────────────────────────────────────────
 async fn health_check(State(state): State<SharedState>) -> impl IntoResponse {
     let modules = serde_json::json!({
-        "social": {"status":"ok","note":"Reddit, GitHub, Telegram APIs"},
+        "social": {"status":"ok","note":"Reddit, GitHub, Telegram"},
         "ip_geo": {"status":"ok","note":"ip-api.com"},
         "whois": {"status":"ok","note":"rdap.org + cloudflare-dns"},
-        "hibp": {"status":"ok","note":"haveibeenpwned.com (rate limited without key)"},
+        "hibp": {"status":"ok","note":"haveibeenpwned.com"},
         "dorks": {"status":"ok","note":"static dork generation"},
-        "paste": {"status":"ok","note":"doxbin.org scraping"},
+        "paste": {"status":"ok","note":"doxbin scraping"},
         "darkweb": {"status":"ok","note":"ahmia.fi"},
         "phone": {"status":"ok","note":"veriphone.io"},
-        "intelx": {"status":"ok","note":"intelx.io"},
-        "ai": {"status":"ok","note":"NVIDIA NIM (requires API key)"},
+        "intelx": {"status": if std::env::var("INTELX_API_KEY").is_ok() {"ok"} else {"degraded"}, "note":"intelx.io (needs INTELX_API_KEY)"},
+        "ai": {"status": if std::env::var("NVIDIA_NIM_API_KEY").is_ok() {"ok"} else {"degraded"}, "note":"NVIDIA NIM (needs NVIDIA_NIM_API_KEY)"},
     });
     let banned_count = state.banned_hwids.read().unwrap().len();
     let active_sessions = state.sessions.read().unwrap().values().filter(|s| !s.banned).count();
@@ -722,10 +811,9 @@ async fn health_check(State(state): State<SharedState>) -> impl IntoResponse {
     }))
 }
 
-// ── Discord State Endpoint (2.7.5) ────────────────────────────────────────────
+// ── Discord State Endpoint ────────────────────────────────────────────────────
 async fn discord_state(State(state): State<SharedState>) -> impl IntoResponse {
-    let gateway_state = state.discord_gateway.get_state();
-    Json(serde_json::to_value(gateway_state).unwrap())
+    Json(serde_json::to_value(state.discord_gateway.get_state()).unwrap())
 }
 
 // ── Payment Endpoints ─────────────────────────────────────────────────────────
@@ -754,25 +842,23 @@ async fn subscription_status(
     State(state): State<SharedState>,
     Path(token): Path<String>,
 ) -> impl IntoResponse {
-    match payment::get_subscription_status(&token, &state.licenses) {
+    match payment::get_subscription_status(&token.trim().to_uppercase(), &state.licenses) {
         Some(sub) => (StatusCode::OK, Json(serde_json::to_value(sub).unwrap())).into_response(),
         None => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Token not found"}))).into_response(),
     }
 }
 
 // ── Admin Handlers ────────────────────────────────────────────────────────────
-
 async fn admin_create_token(
     State(state): State<SharedState>,
     Json(req): Json<CreateTokenRequest>,
 ) -> impl IntoResponse {
-    let tier = match req.tier.to_lowercase().as_str() {
-        "pro" => Tier::Pro, "elite" => Tier::Elite, "admin" => Tier::Admin, _ => Tier::Free,
-    };
+    let tier = Tier::from_str(&req.tier);
     let note = req.note.unwrap_or_default();
     let license = License::new(tier.clone(), req.expires_days, &note);
     let token = license.token.clone();
     state.licenses.write().unwrap().insert(token.clone(), license);
+    state.persist();
     Json(serde_json::json!({"token":token,"tier":tier.name(),"expires_days":req.expires_days}))
 }
 
@@ -787,11 +873,15 @@ async fn admin_revoke_token(
     Path(token): Path<String>,
 ) -> impl IntoResponse {
     let token = token.trim().to_uppercase();
-    let mut licenses = state.licenses.write().unwrap();
-    match licenses.get_mut(&token) {
-        Some(l) => { l.active = false; Json(serde_json::json!({"ok":true})) }
-        None => Json(serde_json::json!({"ok":false,"error":"Не найден"})),
-    }
+    let ok = {
+        let mut licenses = state.licenses.write().unwrap();
+        match licenses.get_mut(&token) {
+            Some(l) => { l.active = false; true }
+            None => false,
+        }
+    };
+    if ok { state.persist(); Json(serde_json::json!({"ok":true})) }
+    else { Json(serde_json::json!({"ok":false,"error":"Не найден"})) }
 }
 
 async fn admin_change_tier(
@@ -800,18 +890,20 @@ async fn admin_change_tier(
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     let token = token.trim().to_uppercase();
-    let new_tier = match body["tier"].as_str().unwrap_or("free") {
-        "pro" => Tier::Pro, "elite" => Tier::Elite, "admin" => Tier::Admin, _ => Tier::Free,
-    };
-    let mut licenses = state.licenses.write().unwrap();
-    match licenses.get_mut(&token) {
-        Some(l) => {
-            l.tier = new_tier.clone();
-            l.requests_limit = new_tier.monthly_requests();
-            Json(serde_json::json!({"ok":true,"tier":new_tier.name()}))
+    let new_tier = Tier::from_str(body["tier"].as_str().unwrap_or("free"));
+    let ok = {
+        let mut licenses = state.licenses.write().unwrap();
+        match licenses.get_mut(&token) {
+            Some(l) => {
+                l.tier = new_tier.clone();
+                l.requests_limit = new_tier.daily_requests();
+                true
+            }
+            None => false,
         }
-        None => Json(serde_json::json!({"ok":false,"error":"Не найден"})),
-    }
+    };
+    if ok { state.persist(); Json(serde_json::json!({"ok":true,"tier":new_tier.name()})) }
+    else { Json(serde_json::json!({"ok":false,"error":"Не найден"})) }
 }
 
 async fn admin_reset_requests(
@@ -819,11 +911,15 @@ async fn admin_reset_requests(
     Path(token): Path<String>,
 ) -> impl IntoResponse {
     let token = token.trim().to_uppercase();
-    let mut licenses = state.licenses.write().unwrap();
-    match licenses.get_mut(&token) {
-        Some(l) => { l.requests_used = 0; Json(serde_json::json!({"ok":true})) }
-        None => Json(serde_json::json!({"ok":false,"error":"Не найден"})),
-    }
+    let ok = {
+        let mut licenses = state.licenses.write().unwrap();
+        match licenses.get_mut(&token) {
+            Some(l) => { l.requests_used = 0; true }
+            None => false,
+        }
+    };
+    if ok { state.persist(); Json(serde_json::json!({"ok":true})) }
+    else { Json(serde_json::json!({"ok":false,"error":"Не найден"})) }
 }
 
 async fn admin_rebind_hwid(
@@ -833,23 +929,90 @@ async fn admin_rebind_hwid(
 ) -> impl IntoResponse {
     let token = token.trim().to_uppercase();
     let new_hwid_raw = body["new_hwid"].as_str().unwrap_or("").to_string();
-    let mut licenses = state.licenses.write().unwrap();
-    match licenses.get_mut(&token) {
-        Some(l) => {
-            if let Some(old) = &l.hwid {
-                state.hwid_index.write().unwrap().remove(old);
+    let ok = {
+        let mut licenses = state.licenses.write().unwrap();
+        match licenses.get_mut(&token) {
+            Some(l) => {
+                if let Some(old) = &l.hwid {
+                    state.hwid_index.write().unwrap().remove(old);
+                }
+                if new_hwid_raw.is_empty() {
+                    l.hwid = None;
+                } else {
+                    let new_hwid = hash_hwid(&new_hwid_raw);
+                    l.hwid = Some(new_hwid.clone());
+                    state.hwid_index.write().unwrap().insert(new_hwid, token.clone());
+                }
+                true
             }
-            if new_hwid_raw.is_empty() {
-                l.hwid = None;
-            } else {
-                let new_hwid = hash_hwid(&new_hwid_raw);
-                l.hwid = Some(new_hwid.clone());
-                state.hwid_index.write().unwrap().insert(new_hwid, token.clone());
-            }
-            Json(serde_json::json!({"ok":true,"message":"HWID переназначен"}))
+            None => false,
         }
-        None => Json(serde_json::json!({"ok":false,"error":"Не найден"})),
+    };
+    if ok { state.persist(); Json(serde_json::json!({"ok":true,"message":"HWID переназначен"})) }
+    else { Json(serde_json::json!({"ok":false,"error":"Не найден"})) }
+}
+
+/// Hard-delete a token: removes it entirely (revoke only deactivates it).
+async fn admin_purge_token(
+    State(state): State<SharedState>,
+    Path(token): Path<String>,
+) -> impl IntoResponse {
+    let token = token.trim().to_uppercase();
+    let removed = {
+        let mut licenses = state.licenses.write().unwrap();
+        match licenses.remove(&token) {
+            Some(lic) => {
+                if let Some(h) = &lic.hwid {
+                    state.hwid_index.write().unwrap().remove(h);
+                }
+                true
+            }
+            None => false,
+        }
+    };
+    if removed {
+        // Drop any live sessions issued for this token.
+        state.sessions.write().unwrap().retain(|_, s| s.token != token);
+        state.persist();
+        Json(serde_json::json!({"ok":true,"message":"Токен удалён"}))
+    } else {
+        Json(serde_json::json!({"ok":false,"error":"Не найден"}))
     }
+}
+
+/// Ban a HWID directly — does not require an active session (sessions are ephemeral).
+async fn admin_ban_hwid(
+    State(state): State<SharedState>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let hwid = body["hwid"].as_str().unwrap_or("").trim().to_string();
+    let reason = body["reason"].as_str().unwrap_or("Нарушение правил").to_string();
+    let admin_name = body["admin_name"].as_str().unwrap_or("admin").to_string();
+    if hwid.is_empty() {
+        return Json(serde_json::json!({"ok":false,"error":"HWID required"}));
+    }
+    state.banned_hwids.write().unwrap().insert(hwid.clone());
+    state.ban_records.write().unwrap().push(BanRecord {
+        hwid: hwid.clone(), reason, banned_at: Utc::now(), banned_by: admin_name,
+        unbanned: false, unbanned_at: None, unbanned_by: None,
+    });
+    {
+        let mut licenses = state.licenses.write().unwrap();
+        for lic in licenses.values_mut() {
+            if lic.hwid.as_deref() == Some(&hwid) {
+                lic.hwid_banned = true;
+                lic.active = false;
+            }
+        }
+    }
+    {
+        let mut sessions = state.sessions.write().unwrap();
+        for s in sessions.values_mut() {
+            if s.hwid == hwid { s.banned = true; }
+        }
+    }
+    state.persist();
+    Json(serde_json::json!({"ok":true}))
 }
 
 async fn admin_list_sessions(State(state): State<SharedState>) -> impl IntoResponse {
@@ -866,45 +1029,41 @@ async fn admin_ban_session(
     let ban_hwid = body["ban_hwid"].as_bool().unwrap_or(false);
     let reason = body["reason"].as_str().unwrap_or("Нарушение правил").to_string();
     let admin_name = body["admin_name"].as_str().unwrap_or("admin").to_string();
-    let mut sessions = state.sessions.write().unwrap();
-    match sessions.get_mut(&session_id) {
-        Some(sess) => {
-            sess.banned = true;
-            let hwid = sess.hwid.clone();
-            let token = sess.token.clone();
-            drop(sessions);
-            if ban_hwid {
-                state.banned_hwids.write().unwrap().insert(hwid.clone());
-                // Create ban record with reason and date
-                let record = BanRecord {
-                    hwid: hwid.clone(),
-                    reason,
-                    banned_at: Utc::now(),
-                    banned_by: admin_name,
-                    unbanned: false,
-                    unbanned_at: None,
-                    unbanned_by: None,
-                };
-                state.ban_records.write().unwrap().push(record);
-                let mut licenses = state.licenses.write().unwrap();
-                if let Some(lic) = licenses.get_mut(&token) {
-                    lic.hwid_banned = true;
-                    lic.active = false;
-                }
+
+    let (hwid, token) = {
+        let mut sessions = state.sessions.write().unwrap();
+        match sessions.get_mut(&session_id) {
+            Some(sess) => {
+                sess.banned = true;
+                (sess.hwid.clone(), sess.token.clone())
             }
-            Json(serde_json::json!({"ok":true,"banned_hwid":ban_hwid}))
+            None => return Json(serde_json::json!({"ok":false,"error":"Сессия не найдена"})),
         }
-        None => Json(serde_json::json!({"ok":false,"error":"Сессия не найдена"})),
+    };
+
+    if ban_hwid {
+        state.banned_hwids.write().unwrap().insert(hwid.clone());
+        state.ban_records.write().unwrap().push(BanRecord {
+            hwid: hwid.clone(), reason, banned_at: Utc::now(), banned_by: admin_name,
+            unbanned: false, unbanned_at: None, unbanned_by: None,
+        });
+        {
+            let mut licenses = state.licenses.write().unwrap();
+            if let Some(lic) = licenses.get_mut(&token) {
+                lic.hwid_banned = true;
+                lic.active = false;
+            }
+        }
+        state.persist();
     }
+    Json(serde_json::json!({"ok":true,"banned_hwid":ban_hwid}))
 }
 
-/// List all ban records (for admin panel)
 async fn admin_list_bans(State(state): State<SharedState>) -> impl IntoResponse {
     let records = state.ban_records.read().unwrap();
     Json(serde_json::to_value(&*records).unwrap())
 }
 
-/// Unban HWID — accessible with admin token, logs who unbanned
 async fn admin_unban_hwid_v2(
     State(state): State<SharedState>,
     Json(body): Json<serde_json::Value>,
@@ -915,40 +1074,26 @@ async fn admin_unban_hwid_v2(
         return Json(serde_json::json!({"ok":false,"error":"HWID required"}));
     }
     state.banned_hwids.write().unwrap().remove(&hwid);
-    // Mark ban record as unbanned
-    let mut records = state.ban_records.write().unwrap();
-    for rec in records.iter_mut() {
-        if rec.hwid == hwid && !rec.unbanned {
-            rec.unbanned = true;
-            rec.unbanned_at = Some(Utc::now());
-            rec.unbanned_by = Some(admin_name);
+    {
+        let mut records = state.ban_records.write().unwrap();
+        for rec in records.iter_mut() {
+            if rec.hwid == hwid && !rec.unbanned {
+                rec.unbanned = true;
+                rec.unbanned_at = Some(Utc::now());
+                rec.unbanned_by = Some(admin_name.clone());
+            }
         }
     }
-    drop(records);
-    // Reactivate licenses
-    let mut licenses = state.licenses.write().unwrap();
-    for lic in licenses.values_mut() {
-        if lic.hwid.as_deref() == Some(&hwid) {
-            lic.hwid_banned = false;
-            lic.active = true;
+    {
+        let mut licenses = state.licenses.write().unwrap();
+        for lic in licenses.values_mut() {
+            if lic.hwid.as_deref() == Some(&hwid) {
+                lic.hwid_banned = false;
+                lic.active = true;
+            }
         }
     }
-    Json(serde_json::json!({"ok":true}))
-}
-
-async fn admin_unban_hwid(
-    State(state): State<SharedState>,
-    Json(body): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    let hwid = body["hwid"].as_str().unwrap_or("").to_string();
-    state.banned_hwids.write().unwrap().remove(&hwid);
-    let mut licenses = state.licenses.write().unwrap();
-    for lic in licenses.values_mut() {
-        if lic.hwid.as_deref() == Some(&hwid) {
-            lic.hwid_banned = false;
-            lic.active = true;
-        }
-    }
+    state.persist();
     Json(serde_json::json!({"ok":true}))
 }
 
@@ -968,9 +1113,11 @@ async fn admin_create_news(
         created_at: Utc::now(),
         published: req.published.unwrap_or(true),
         author: req.author.unwrap_or_else(|| "Admin".into()),
+        attachments: req.attachments.unwrap_or_default(),
     };
     let id = item.id.clone();
     state.news.write().unwrap().push(item);
+    state.persist();
     Json(serde_json::json!({"ok":true,"id":id}))
 }
 
@@ -984,35 +1131,46 @@ async fn admin_update_news(
     Path(id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let mut news = state.news.write().unwrap();
-    match news.iter_mut().find(|n| n.id == id) {
-        Some(item) => {
-            if let Some(v) = body["title"].as_str() { item.title = v.to_string(); }
-            if let Some(v) = body["preview_text"].as_str() { item.preview_text = v.to_string(); }
-            if let Some(v) = body["full_text"].as_str() { item.full_text = v.to_string(); }
-            if let Some(v) = body["image_url"].as_str() { item.image_url = Some(v.to_string()); }
-            if let Some(v) = body["video_url"].as_str() { item.video_url = Some(v.to_string()); }
-            if let Some(v) = body["media_position"].as_str() { item.media_position = v.to_string(); }
-            if let Some(v) = body["media_rounded"].as_bool() { item.media_rounded = v; }
-            if let Some(v) = body["published"].as_bool() { item.published = v; }
-            Json(serde_json::json!({"ok":true}))
+    let ok = {
+        let mut news = state.news.write().unwrap();
+        match news.iter_mut().find(|n| n.id == id) {
+            Some(item) => {
+                if let Some(v) = body["title"].as_str() { item.title = v.to_string(); }
+                if let Some(v) = body["preview_text"].as_str() { item.preview_text = v.to_string(); }
+                if let Some(v) = body["full_text"].as_str() { item.full_text = v.to_string(); }
+                if let Some(v) = body["image_url"].as_str() { item.image_url = Some(v.to_string()); }
+                if let Some(v) = body["video_url"].as_str() { item.video_url = Some(v.to_string()); }
+                if let Some(v) = body["media_position"].as_str() { item.media_position = v.to_string(); }
+                if let Some(v) = body["media_rounded"].as_bool() { item.media_rounded = v; }
+                if let Some(v) = body["published"].as_bool() { item.published = v; }
+                if let Some(v) = body.get("attachments") {
+                    if v.is_array() {
+                        if let Ok(atts) = serde_json::from_value::<Vec<UploadedFile>>(v.clone()) {
+                            item.attachments = atts;
+                        }
+                    }
+                }
+                true
+            }
+            None => false,
         }
-        None => Json(serde_json::json!({"ok":false,"error":"Новость не найдена"})),
-    }
+    };
+    if ok { state.persist(); Json(serde_json::json!({"ok":true})) }
+    else { Json(serde_json::json!({"ok":false,"error":"Новость не найдена"})) }
 }
 
 async fn admin_delete_news(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let mut news = state.news.write().unwrap();
-    let before = news.len();
-    news.retain(|n| n.id != id);
-    if news.len() < before {
-        Json(serde_json::json!({"ok":true}))
-    } else {
-        Json(serde_json::json!({"ok":false,"error":"Не найдено"}))
-    }
+    let removed = {
+        let mut news = state.news.write().unwrap();
+        let before = news.len();
+        news.retain(|n| n.id != id);
+        news.len() < before
+    };
+    if removed { state.persist(); Json(serde_json::json!({"ok":true})) }
+    else { Json(serde_json::json!({"ok":false,"error":"Не найдено"})) }
 }
 
 async fn admin_stats(State(state): State<SharedState>) -> impl IntoResponse {
@@ -1036,23 +1194,23 @@ async fn admin_stats(State(state): State<SharedState>) -> impl IntoResponse {
     }))
 }
 
-// ── Seed ──────────────────────────────────────────────────────────────────────
+// ── Seed (only when no persisted state exists) ─────────────────────────────────
 fn seed_demo(state: &SharedState) {
-    let mut licenses = state.licenses.write().unwrap();
-    let mut admin = License::new(Tier::Admin, None, "Demo admin");
-    admin.token = "RVN-ADMIN-DEMO-0000-0000".to_string();
-    licenses.insert(admin.token.clone(), admin);
-    let free = License::new(Tier::Free, Some(30), "Demo free 30 days");
-    licenses.insert(free.token.clone(), free);
-    let pro = License::new(Tier::Pro, Some(30), "Demo pro");
-    licenses.insert(pro.token.clone(), pro);
-
-    let mut news = state.news.write().unwrap();
-    news.push(NewsItem {
+    {
+        let mut licenses = state.licenses.write().unwrap();
+        let mut admin = License::new(Tier::Admin, None, "Demo admin");
+        admin.token = "RVN-ADMIN-DEMO-0000-0000".to_string();
+        licenses.insert(admin.token.clone(), admin);
+        let free = License::new(Tier::Free, Some(30), "Demo free 30 days");
+        licenses.insert(free.token.clone(), free);
+        let pro = License::new(Tier::Pro, Some(30), "Demo pro");
+        licenses.insert(pro.token.clone(), pro);
+    }
+    state.news.write().unwrap().push(NewsItem {
         id: Uuid::new_v4().to_string(),
         title: "Ravens Nexus v2.8 — Новые возможности".to_string(),
-        preview_text: "Обновление системы OSINT: привязка к железу, активные сессии, система новостей и улучшенный интерфейс.".to_string(),
-        full_text: "В этом обновлении мы добавили:\n\n• Привязка токена к HWID устройства\n• Система активных сессий с баном по железу\n• Новостная лента с медиа-контентом\n• Улучшенная админ-панель\n• Free тариф: 2 запроса, доступ к OSINT\n• Pro тариф: 1000 запросов, все модули\n• Elite тариф: безлимит + AI".to_string(),
+        preview_text: "OSINT теперь выполняется на сервере: HWID-привязка, сессии, лента новостей и обновлённый интерфейс.".to_string(),
+        full_text: "В этом обновлении:\n\n• OSINT-движок полностью на сервере\n• Привязка токена к HWID устройства\n• Сессии с баном по железу\n• Новостная лента с медиа\n• Обновлённая админ-панель\n• FREE: 2 запроса/день · PRO: 1000 · ELITE: ∞ + AI".to_string(),
         image_url: Some("https://images.unsplash.com/photo-1614064641938-3bbee52942c7?w=800".to_string()),
         video_url: None,
         media_position: "top".to_string(),
@@ -1062,39 +1220,34 @@ fn seed_demo(state: &SharedState) {
         author: "Ravens Team".to_string(),
         attachments: vec![],
     });
+    state.persist();
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
-    
-    // Initialize Database (persistence)
-    let db_url = env_or("DATABASE_URL", "sqlite:ravens_nexus.db");
-    let db = match db::Database::new(&db_url).await {
-        Ok(database) => {
-            tracing::info!("Database connected: {}", db_url);
-            Some(Arc::new(database))
-        }
-        Err(e) => {
-            tracing::warn!("Database connection failed ({}), using in-memory storage", e);
-            None
-        }
-    };
-    
-    // Initialize Discord Gateway
+
     let discord_gateway = Arc::new(discord::DiscordGateway::new());
     let bot_token = env_or("DISCORD_BOT_TOKEN", "");
     if !bot_token.is_empty() {
         discord_gateway.start(Some(bot_token)).await;
     }
-    
-    let state = Arc::new(AppState {
-        discord_gateway,
-        db,
-        ..Default::default()
-    });
-    seed_demo(&state);
+
+    let state = Arc::new(AppState { discord_gateway, ..Default::default() });
+
+    // Load persisted state, else seed demo data.
+    match state.store.load::<Snapshot>() {
+        Some(snap) if !snap.licenses.is_empty() => {
+            let n = snap.licenses.len();
+            state.load_snapshot(snap);
+            tracing::info!("Loaded persisted state: {} licenses", n);
+        }
+        _ => {
+            seed_demo(&state);
+            tracing::info!("No persisted state — seeded demo data");
+        }
+    }
 
     let admin_routes = Router::new()
         .route("/tokens", post(admin_create_token))
@@ -1103,8 +1256,10 @@ async fn main() {
         .route("/tokens/:token/tier", put(admin_change_tier))
         .route("/tokens/:token/reset-requests", post(admin_reset_requests))
         .route("/tokens/:token/rebind-hwid", post(admin_rebind_hwid))
+        .route("/tokens/:token/purge", post(admin_purge_token))
         .route("/sessions", get(admin_list_sessions))
         .route("/sessions/:id/ban", post(admin_ban_session))
+        .route("/hwid/ban", post(admin_ban_hwid))
         .route("/hwid/unban", post(admin_unban_hwid_v2))
         .route("/bans", get(admin_list_bans))
         .route("/news", get(admin_list_news))
@@ -1120,6 +1275,7 @@ async fn main() {
         .route("/license/consume", post(consume_request))
         .route("/license/status/:token", get(license_status))
         .route("/license/rebind", post(rebind_token))
+        .route("/osint/run", post(osint_run))
         .route("/hwid/check", post(check_hwid_ban))
         .route("/news", get(get_news_public))
         .route("/news/stream", get(news_sse))
@@ -1128,6 +1284,9 @@ async fn main() {
         .route("/payment/create", post(create_payment))
         .route("/payment/status/:token", get(subscription_status));
 
+    // CORS: the desktop webview fetches news/health cross-origin, so the API allows any
+    // origin. State-changing endpoints are additionally gated by the admin secret or the
+    // signed session-token scheme, so permissive CORS does not weaken auth.
     let cors = CorsLayer::permissive();
     let app = Router::new()
         .route("/", get(|| async { Json(serde_json::json!({"status":"ok","service":"ravens-nexus-server","hint":"Open /admin-ui/admin.html"})) }))
@@ -1142,9 +1301,10 @@ async fn main() {
 
     let port = env_or_u16("RAVENS_SERVER_PORT", SERVER_PORT);
     let addr = format!("0.0.0.0:{}", port);
-    let secret = env_or("RAVENS_ADMIN_SECRET", ADMIN_SECRET);
+    let using_env_secret = std::env::var("RAVENS_ADMIN_SECRET")
+        .map(|v| v.len() >= 8 && v != "RAVENS_ADMIN_SECRET_CHANGE_ME")
+        .unwrap_or(false);
 
-    // Try to detect public Replit URL (REPL_SLUG / REPLIT_DEV_DOMAIN / REPLIT_DOMAINS)
     let public_url = std::env::var("REPLIT_DEV_DOMAIN")
         .ok()
         .map(|d| format!("https://{}", d))
@@ -1155,7 +1315,7 @@ async fn main() {
         .unwrap_or_else(|| format!("http://localhost:{}", port));
 
     tracing::info!("================================================================");
-    tracing::info!("  RAVENS NEXUS LICENSE SERVER — STARTED");
+    tracing::info!("  RAVENS NEXUS SERVER — STARTED");
     tracing::info!("================================================================");
     tracing::info!("  Local bind:      {}", addr);
     tracing::info!("  Public URL:      {}", public_url);
@@ -1163,10 +1323,12 @@ async fn main() {
     tracing::info!("  Admin Panel:     {}/admin-ui/admin.html", public_url);
     tracing::info!("  API base:        {}/api", public_url);
     tracing::info!("----------------------------------------------------------------");
-    if secret == ADMIN_SECRET {
-        tracing::warn!("  ADMIN SECRET: using built-in default — set RAVENS_ADMIN_SECRET env var!");
-    } else {
+    // Touch the secret so a random one (if any) is generated and logged now.
+    let _ = admin_secret();
+    if using_env_secret {
         tracing::info!("  ADMIN SECRET: configured via RAVENS_ADMIN_SECRET env var");
+    } else {
+        tracing::warn!("  ADMIN SECRET: not configured — see generated value above (set RAVENS_ADMIN_SECRET!)");
     }
     tracing::info!("================================================================");
 

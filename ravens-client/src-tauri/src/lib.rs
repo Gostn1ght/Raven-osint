@@ -1,7 +1,6 @@
 pub mod commands;
 pub mod hwid;
 pub mod config;
-pub mod osint;
 
 use commands::AppState;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -12,9 +11,9 @@ pub fn run() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Get server URL from env or use default
+    // Default backend URL (overridable in Settings → Server, or via RAVENS_SERVER_URL).
     let server_url = std::env::var("RAVENS_SERVER_URL")
-        .unwrap_or_else(|_| "https://69e0e937-387f-4aa3-9d15-8e9ffcd3b057-00-2i89nydyt7vcb.sisko.replit.dev:5000".to_string());
+        .unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -27,13 +26,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_hwid,
+            commands::set_server_url,
             commands::authenticate,
-            commands::execute_action,
+            commands::osint_run,
             commands::save_config,
             commands::load_config,
             commands::clear_config,
-            commands::osint_scan,
-            commands::osint_module,
+            commands::minimize_window,
+            commands::maximize_window,
+            commands::close_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,17 +1,40 @@
-[workspace]
-members = [
-  "ravens-client/src-tauri",
-  "ravens-server",
-]
-resolver = "2"
+language = "rust"
+run = "cargo run --release -p ravens-server"
+modules = ["rust-stable"]
 
-[workspace.package]
-version = "0.2.0"
-edition = "2021"
+[nix]
+channel = "stable-24_05"
 
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = true
-panic = "abort"
+[[ports]]
+localPort = 3000
+externalPort = 3000
+
+[env]
+RAVENS_SERVER_PORT = "3000"
+
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cargo run --release -p ravens-server"
+waitForPort = 3000
+
+[workflows.workflow.metadata]
+outputType = "console"

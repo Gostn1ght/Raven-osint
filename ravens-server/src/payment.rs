@@ -53,7 +53,7 @@ pub fn validate_license_key(key: &str, licenses: &RwLock<HashMap<String, crate::
 /// Process payment and activate/extend subscription
 pub fn process_payment(
     req: PaymentRequest,
-    licenses: &RwLock<HashMap<String, crate::License>>,
+    _licenses: &RwLock<HashMap<String, crate::License>>,
 ) -> Result<PaymentResponse, String> {
     // Calculate price based on tier and period
     let (amount, currency) = match req.tier.as_str() {
@@ -71,7 +71,7 @@ pub fn process_payment(
     };
 
     // Generate payment ID
-    let payment_id = format("PAY-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or(""));
+    let payment_id = format!("PAY-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or(""));
 
     // Generate payment URL based on method
     let payment_url = match req.method.as_str() {
@@ -81,15 +81,15 @@ pub fn process_payment(
         }
         "paddle" => {
             // Paddle checkout URL
-            Some(format("https://checkout.paddle.com/checkout/custom/{}", payment_id))
+            Some(format!("https://checkout.paddle.com/checkout/custom/{}", payment_id))
         }
         "sbp" => {
             // SBP (СБП) payment - QR code or deep link
-            Some(format("https://qr.nspk.ru/{}", payment_id))
+            Some(format!("https://qr.nspk.ru/{}", payment_id))
         }
         "crypto" => {
             // Crypto payment (USDT TRC-20)
-            Some(format("/payment/crypto/{}", payment_id))
+            Some(format!("/payment/crypto/{}", payment_id))
         }
         _ => return Err("Неверный метод оплаты".to_string()),
     };
@@ -106,9 +106,10 @@ pub fn process_payment(
 }
 
 /// Confirm payment called by payment provider webhook
+#[allow(dead_code)]
 pub fn confirm_payment(
     payment_id: &str,
-    licenses: &RwLock<HashMap<String, crate::License>>,
+    _licenses: &RwLock<HashMap<String, crate::License>>,
 ) -> Result<String, String> {
     // In production, verify payment with provider
     // For demo, we just return success
@@ -122,7 +123,7 @@ pub fn get_subscription_status(
     licenses: &RwLock<HashMap<String, crate::License>>,
 ) -> Option<Subscription> {
     let licenses = licenses.read().ok()?;
-    let lic = licenses.get(&token)?;
+    let lic = licenses.get(token)?;
     
     Some(Subscription {
         token: token.to_string(),

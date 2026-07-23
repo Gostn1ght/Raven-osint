@@ -2,6 +2,7 @@
 // Connects to Discord WebSocket gateway and listens for events
 
 use dashmap::DashMap;
+use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::broadcast;

@@ -2,100 +2,90 @@
 // SECURITY MODULE — "Only Server Decides" Protection
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// Этот модуль добавляет защиту:
-// 1. JWT токены с привязкой к HWID
-// 2. HMAC подпись запросов (клиент подписывает, сервер проверяет)
-// 3. HMAC подпись ответов (сервер подписывает, клиент проверяет)
-// 4. Rate limiting (защита от DDoS)
-// 5. Anti-replay protection (timestamp + nonce)
-// 6. Логирование всех действий
+// Protection layers:
+//   1. Session tokens (HMAC-signed, HWID-bound, expiring) — verified server-side
+//   2. Per-request HMAC signatures (client signs, server verifies)
+//   3. Signed responses (server signs, client verifies — anti-tamper)
+//   4. Rate limiting (per HWID) — anti-abuse / DoS
+//   5. Anti-replay (timestamp freshness + one-time nonce cache)
+//   6. Structured action logging
 //
+// Secrets are loaded from the environment at startup. If unset, a random secret is
+// generated per-process (safe default: never a hard-coded production key).
 
-use axum::{
-    extract::Request,
-    http::{HeaderMap, StatusCode},
-    middleware::Next,
-    response::{IntoResponse, Response},
-    Json,
-};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// Тип для HMAC-SHA256
 type HmacSha256 = Hmac<Sha256>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CONFIGURATION
+// CONFIGURATION (env-driven, never hard-coded in production)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Секретный ключ для HMAC (в проде — из env var или Vault)
-const HMAC_SECRET: &str = "ravens-nexus-hmac-secret-change-in-production-2026";
-
-/// Секретный ключ для JWT (в проде — из env var)
-const JWT_SECRET: &str = "ravens-nexus-jwt-secret-change-in-production-2026";
-
-/// Время жизни JWT токена (в минутах)
-const JWT_EXPIRY_MINUTES: i64 = 60;
-
-/// Максимальный возраст запроса (секунды) — защита от replay
-const REQUEST_MAX_AGE_SECONDS: u64 = 30;
-
-/// Rate limit: максимум запросов в минуту на пользователя
+/// Token lifetime (minutes).
+const TOKEN_EXPIRY_MINUTES: i64 = 60;
+/// Maximum request age (seconds) — anti-replay freshness window.
+pub const REQUEST_MAX_AGE_SECONDS: u64 = 30;
+/// Rate limit: max requests per minute per key.
 const RATE_LIMIT_PER_MINUTE: u32 = 30;
+
+/// Generates a cryptographically-random hex secret.
+fn random_secret() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
+
+/// HMAC secret for response/request signing — from `RAVENS_HMAC_SECRET` or random.
+fn hmac_secret() -> &'static str {
+    static S: OnceLock<String> = OnceLock::new();
+    S.get_or_init(|| {
+        std::env::var("RAVENS_HMAC_SECRET").ok().filter(|v| v.len() >= 16).unwrap_or_else(|| {
+            tracing::warn!("RAVENS_HMAC_SECRET not set (or too short) — using a random per-process secret");
+            random_secret()
+        })
+    })
+}
+
+/// Session-token signing secret — from `RAVENS_JWT_SECRET` or random.
+fn token_secret() -> &'static str {
+    static S: OnceLock<String> = OnceLock::new();
+    S.get_or_init(|| {
+        std::env::var("RAVENS_JWT_SECRET").ok().filter(|v| v.len() >= 16).unwrap_or_else(|| {
+            tracing::warn!("RAVENS_JWT_SECRET not set (or too short) — using a random per-process secret");
+            random_secret()
+        })
+    })
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATA STRUCTURES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// JWT Claims — данные внутри токена
+/// Claims embedded in a session token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JwtClaims {
-    /// ID пользователя (license token)
+pub struct TokenClaims {
+    /// Subject — the session id.
     pub sub: String,
-    /// HWID привязка
+    /// HWID this token is bound to (hashed).
     pub hwid: String,
-    /// ID сессии
+    /// Session id.
     pub sid: String,
-    /// HMAC соль для подписи запросов
+    /// Per-session salt used to sign subsequent requests.
     pub salt: String,
-    /// Время выдачи
+    /// Issued-at (unix seconds).
     pub iat: i64,
-    /// Время истечения
+    /// Expiry (unix seconds).
     pub exp: i64,
 }
 
-/// Подписанный запрос от клиента
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SignedRequest {
-    /// Timestamp запроса (unix timestamp)
-    pub timestamp: u64,
-    /// Уникальный nonce (UUID)
-    pub nonce: String,
-    /// Тело запроса (base64)
-    pub payload: String,
-    /// HMAC подпись
-    pub signature: String,
-}
-
-/// Подписанный ответ сервера
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SignedResponse {
-    /// Timestamp ответа
-    pub timestamp: u64,
-    /// Nonce (тот же что в запросе для связи)
-    pub nonce: String,
-    /// Тело ответа
-    pub payload: serde_json::Value,
-    /// HMAC подпись
-    pub signature: String,
-}
-
-/// Rate limit entry
+/// Rate-limit bucket.
 #[derive(Debug, Clone)]
 struct RateEntry {
     count: u32,
@@ -103,67 +93,39 @@ struct RateEntry {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// JWT UTILITIES
+// SESSION TOKEN (HMAC-signed, self-describing — a compact JWS-style token)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Генерирует JWT токен с привязкой к HWID
-/// В проде используйте jsonwebtoken крейт, здесь — упрощённая версия
+/// Issues a session token bound to `hwid` + `session_id`. Returns `(token, salt)`.
 pub fn generate_jwt(hwid: &str, session_id: &str) -> (String, String) {
-    let salt = uuid::Uuid::new_v4().to_string().replace("-", "");
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    
-    let claims = JwtClaims {
+    let salt = uuid::Uuid::new_v4().to_string().replace('-', "");
+    let now = unix_now() as i64;
+    let claims = TokenClaims {
         sub: session_id.to_string(),
         hwid: hwid.to_string(),
         sid: session_id.to_string(),
         salt: salt.clone(),
         iat: now,
-        exp: now + (JWT_EXPIRY_MINUTES * 60),
+        exp: now + TOKEN_EXPIRY_MINUTES * 60,
     };
-    
-    // В проде — используйте jsonwebtoken::encode
-    // Здесь — упрощённая base64 кодировка для демонстрации
-    let claims_json = serde_json::to_string(&claims).unwrap();
-    let token = base64::encode(claims_json.as_bytes());
-    
-    // Подпись токена
-    let signature = hmac_sign(token.as_bytes(), JWT_SECRET.as_bytes());
-    let signed_token = format!("{}.{}", token, signature);
-    
-    (signed_token, salt)
+    let claims_json = serde_json::to_string(&claims).unwrap_or_default();
+    let payload = b64_encode(claims_json.as_bytes());
+    let signature = hmac_sign(payload.as_bytes(), token_secret().as_bytes());
+    (format!("{}.{}", payload, signature), salt)
 }
 
-/// Проверяет JWT токен и возвращает claims
-pub fn verify_jwt(token: &str) -> Result<JwtClaims, String> {
-    // В проде — используйте jsonwebtoken::decode
-    let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() != 2 {
-        return Err("Invalid token format".to_string());
+/// Verifies a session token and returns its claims.
+pub fn verify_jwt(token: &str) -> Result<TokenClaims, String> {
+    let (payload, sig) = token.split_once('.').ok_or("invalid token format")?;
+    let expected = hmac_sign(payload.as_bytes(), token_secret().as_bytes());
+    if !hmac_compare(sig, &expected) {
+        return Err("invalid token signature".to_string());
     }
-    
-    // Проверяем подпись
-    let expected_sig = hmac_sign(parts[0].as_bytes(), JWT_SECRET.as_bytes());
-    if !hmac_compare(parts[1], &expected_sig) {
-        return Err("Invalid token signature".to_string());
+    let claims_bytes = b64_decode(payload).map_err(|_| "invalid base64")?;
+    let claims: TokenClaims = serde_json::from_slice(&claims_bytes).map_err(|_| "invalid claims")?;
+    if claims.exp < unix_now() as i64 {
+        return Err("token expired".to_string());
     }
-    
-    // Декодируем claims
-    let claims_bytes = base64::decode(parts[0]).map_err(|_| "Invalid base64")?;
-    let claims: JwtClaims = serde_json::from_slice(&claims_bytes)
-        .map_err(|_| "Invalid claims")?;
-    
-    // Проверяем истечение
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    if claims.exp < now {
-        return Err("Token expired".to_string());
-    }
-    
     Ok(claims)
 }
 
@@ -171,21 +133,17 @@ pub fn verify_jwt(token: &str) -> Result<JwtClaims, String> {
 // HMAC UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Подписывает данные HMAC-SHA256
 pub fn hmac_sign(data: &[u8], key: &[u8]) -> String {
-    let mut mac = HmacSha256::new_from_slice(key)
-        .expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
     mac.update(data);
-    let result = mac.finalize();
-    hex::encode(result.into_bytes())
+    hex::encode(mac.finalize().into_bytes())
 }
 
-/// Подписывает строку
 pub fn hmac_sign_str(data: &str, key: &str) -> String {
     hmac_sign(data.as_bytes(), key.as_bytes())
 }
 
-/// Проверяет HMAC подпись (constant-time comparison)
+/// Constant-time string comparison.
 pub fn hmac_compare(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
@@ -197,188 +155,178 @@ pub fn hmac_compare(a: &str, b: &str) -> bool {
     diff == 0
 }
 
-/// Генерирует HMAC подпись для ответа сервера
+/// Signs a server response body so the client can detect tampering / MITM.
 pub fn sign_response(payload: &serde_json::Value, nonce: &str) -> String {
     let message = format!("{}:{}", nonce, serde_json::to_string(payload).unwrap_or_default());
-    hmac_sign_str(&message, HMAC_SECRET)
+    hmac_sign_str(&message, hmac_secret())
 }
 
-/// Проверяет HMAC подпись ответа на клиенте
-pub fn verify_response_signature(
-    payload: &serde_json::Value,
-    nonce: &str,
-    signature: &str,
-) -> bool {
-    let expected = sign_response(payload, nonce);
-    hmac_compare(signature, &expected)
-}
-
-/// Проверяет подпись запроса от клиента
+/// Verifies a per-request signature produced by the client.
+/// The client signs `hwid:nonce:timestamp` with its per-session salt.
 pub fn verify_request_signature(
-    payload: &str,
+    hwid: &str,
     nonce: &str,
     timestamp: u64,
     signature: &str,
-    hmac_salt: &str,
+    salt: &str,
 ) -> bool {
-    let message = format!("{}:{}:{}:{}", payload, nonce, timestamp, hmac_salt);
-    let expected = hmac_sign_str(&message, HMAC_SECRET);
-    hmac_compare(signature, &expected)
+    let message = format!("{}:{}:{}", hwid, nonce, timestamp);
+    hmac_compare(signature, &hmac_sign_str(&message, salt))
+}
+
+/// Checks anti-replay freshness of a request timestamp.
+pub fn timestamp_is_fresh(timestamp: u64) -> bool {
+    timestamp != 0 && unix_now().abs_diff(timestamp) <= REQUEST_MAX_AGE_SECONDS
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RATE LIMITER
+// RATE LIMITER (in-memory; per-key sliding minute window)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Простой in-memory rate limiter (в проде используйте Redis)
 pub struct RateLimiter {
     entries: Mutex<HashMap<String, RateEntry>>,
+    limit: u32,
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new(RATE_LIMIT_PER_MINUTE)
+    }
 }
 
 impl RateLimiter {
-    pub fn new() -> Self {
-        Self {
-            entries: Mutex::new(HashMap::new()),
-        }
+    pub fn new(limit: u32) -> Self {
+        Self { entries: Mutex::new(HashMap::new()), limit }
     }
-    
-    /// Проверяет не превышен ли лимит для данного ключа
+
+    /// Returns `true` if the request is allowed, `false` if the limit is exceeded.
     pub fn check(&self, key: &str) -> bool {
+        let now = unix_now();
         let mut entries = self.entries.lock().unwrap();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        
-        let window = 60; // 1 минута
-        
-        if let Some(entry) = entries.get_mut(key) {
-            if now - entry.window_start > window {
-                // Новое окно
-                *entry = RateEntry {
-                    count: 1,
-                    window_start: now,
-                };
-                true
-            } else if entry.count < RATE_LIMIT_PER_MINUTE {
-                entry.count += 1;
-                true
-            } else {
-                false
+        // Opportunistic prune of stale buckets to bound memory.
+        entries.retain(|_, e| now.saturating_sub(e.window_start) <= 120);
+        match entries.get_mut(key) {
+            Some(entry) if now.saturating_sub(entry.window_start) <= 60 => {
+                if entry.count < self.limit {
+                    entry.count += 1;
+                    true
+                } else {
+                    false
+                }
             }
-        } else {
-            entries.insert(key.to_string(), RateEntry {
-                count: 1,
-                window_start: now,
-            });
-            true
+            _ => {
+                entries.insert(key.to_string(), RateEntry { count: 1, window_start: now });
+                true
+            }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECURITY MIDDLEWARE
+// NONCE CACHE (one-time-use nonces — closes the replay window)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Middleware для проверки подписи запроса и rate limiting
-pub async fn security_middleware(
-    headers: HeaderMap,
-    request: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    // Извлекаем заголовки безопасности
-    let jwt_token = headers
-        .get("x-auth-token")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    
-    let hwid = headers
-        .get("x-hwid")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    
-    let timestamp = headers
-        .get("x-timestamp")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
-    
-    let nonce = headers
-        .get("x-nonce")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    
-    let signature = headers
-        .get("x-signature")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    
-    // 1. Проверка свежести запроса (anti-replay)
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    
-    if timestamp == 0 || now.abs_diff(timestamp) > REQUEST_MAX_AGE_SECONDS {
-        return Err(StatusCode::UNAUTHORIZED);
+pub struct NonceCache {
+    seen: Mutex<HashMap<String, u64>>,
+}
+
+impl Default for NonceCache {
+    fn default() -> Self {
+        Self { seen: Mutex::new(HashMap::new()) }
     }
-    
-    // 2. Проверка JWT
-    let claims = verify_jwt(jwt_token).map_err(|_| StatusCode::UNAUTHORIZED)?;
-    
-    // 3. Проверка HWID match
-    if claims.hwid != hwid {
-        return Err(StatusCode::UNAUTHORIZED);
+}
+
+impl NonceCache {
+    /// Records a nonce. Returns `false` if it was already used (replay).
+    pub fn register(&self, nonce: &str) -> bool {
+        if nonce.is_empty() {
+            return false;
+        }
+        let now = unix_now();
+        let mut seen = self.seen.lock().unwrap();
+        seen.retain(|_, ts| now.saturating_sub(*ts) <= REQUEST_MAX_AGE_SECONDS * 2);
+        if seen.contains_key(nonce) {
+            return false;
+        }
+        seen.insert(nonce.to_string(), now);
+        true
     }
-    
-    // 4. Проверка подписи запроса
-    // В полной версии здесь бы проверялось тело запроса
-    let sign_message = format!("{}:{}:{}", hwid, nonce, timestamp);
-    if !hmac_compare(signature, &hmac_sign_str(&sign_message, &claims.salt)) {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-    
-    // 5. Rate limiting по HWID
-    // В полной версии — через Redis
-    
-    // Запрос прошёл все проверки — пропускаем дальше
-    Ok(next.run(request).await)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ACTION LOGGER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Логирует действие пользователя
-pub fn log_action(
-    user_id: &str,
-    action: &str,
-    target: &str,
-    result: &str,
-    ip: &str,
-    hwid: &str,
-) {
-    let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+pub fn log_action(user_id: &str, action: &str, target: &str, result: &str, ip: &str, hwid: &str) {
     tracing::info!(
-        "[ACTION_LOG] {} | user={} | action={} | target={} | result={} | ip={} | hwid={}",
-        timestamp, user_id, action, target, result, ip, hwid
+        "[ACTION] {} | user={} | action={} | target={} | result={} | ip={} | hwid={}",
+        Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+        user_id, action, target, result, ip, short(hwid)
     );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BASE64 HELPERS (для совместимости)
+// HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-mod base64 {
-    pub fn encode(data: &[u8]) -> String {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD.encode(data)
+fn unix_now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Truncates a long id (e.g. HWID hash) for log hygiene.
+fn short(s: &str) -> String {
+    if s.len() > 12 { format!("{}…", &s[..12]) } else { s.to_string() }
+}
+
+fn b64_encode(data: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(data)
+}
+
+fn b64_decode(data: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(data)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_roundtrip_and_signature() {
+        let (tok, salt) = generate_jwt("hwidhash", "sess-1");
+        let claims = verify_jwt(&tok).expect("valid token");
+        assert_eq!(claims.hwid, "hwidhash");
+        assert_eq!(claims.salt, salt);
+
+        // A tampered payload must fail verification.
+        let mut parts = tok.split('.');
+        let bad = format!("{}.{}", parts.next().unwrap(), "deadbeef");
+        assert!(verify_jwt(&bad).is_err());
     }
-    
-    pub fn decode(data: &str) -> Result<Vec<u8>, String> {
-        use base64::Engine;
-        base64::engine::general_purpose::STANDARD
-            .decode(data)
-            .map_err(|e| e.to_string())
+
+    #[test]
+    fn request_signature_matches_client_scheme() {
+        let (_tok, salt) = generate_jwt("hw", "s");
+        let sig = hmac_sign_str(&format!("{}:{}:{}", "hw", "nonce123", 1000u64), &salt);
+        assert!(verify_request_signature("hw", "nonce123", 1000, &sig, &salt));
+        assert!(!verify_request_signature("hw", "nonce123", 1001, &sig, &salt));
+    }
+
+    #[test]
+    fn nonce_cache_rejects_replay() {
+        let cache = NonceCache::default();
+        assert!(cache.register("abc"));
+        assert!(!cache.register("abc"));
+    }
+
+    #[test]
+    fn rate_limiter_enforces_limit() {
+        let rl = RateLimiter::new(2);
+        assert!(rl.check("k"));
+        assert!(rl.check("k"));
+        assert!(!rl.check("k"));
     }
 }

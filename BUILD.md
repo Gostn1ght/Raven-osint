@@ -22,20 +22,25 @@
 
 ```bash
 cd ravens-client
-pnpm install
-pnpm tauri dev
+npm install          # или pnpm install
+npm run tauri dev    # или: npm run tauri build
 ```
 
-В настройках приложения введи URL Replit-сервера и токен.
+В настройках приложения (Настройки → Сервер) введи URL сервера и токен, нажми «Активировать».
 
 ## API Endpoints
 
 ### Public
-- `POST /api/license/activate` — активация токена, привязка HWID
-- `POST /api/license/consume` — списание запроса
+- `POST /api/license/activate` — активация токена, привязка HWID → выдаёт session-токен + salt
+- `POST /api/osint/run` — **выполнить OSINT-модуль на сервере** (подписанный запрос; проверка токена, HWID, тарифа, лимита)
+- `POST /api/license/consume` — списание запроса (legacy)
 - `GET  /api/license/status/:token` — статус токена
 - `POST /api/license/rebind` — смена HWID (требует admin_secret)
 - `GET  /api/news` — публичные новости
+
+> **Важно:** вся OSINT-логика выполняется на сервере. Клиент только активирует токен
+> и отправляет подписанные запросы; ключи провайдеров (NVIDIA/IntelX/HIBP) хранятся в
+> переменных окружения сервера и не попадают на клиент.
 
 ### Admin (x-admin-secret header)
 - `POST   /admin/tokens` — создать токен

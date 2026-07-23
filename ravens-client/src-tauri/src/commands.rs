@@ -1,19 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// TAURI COMMANDS — Secure API Client Integration
+// TAURI COMMANDS — thin secure client.
 // ═══════════════════════════════════════════════════════════════════════════════
+// The client performs NO reconnaissance itself. It authenticates a token, then asks
+// the server to run each OSINT module and simply renders what comes back.
 
-use crate::hwid;
 use crate::config;
-use crate::osint;
-use serde::Deserialize;
+use crate::hwid;
 use std::sync::Arc;
 use tauri::State;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// APP STATE (shared across commands)
-// Используем tokio::sync::Mutex — его Guard является Send
-// ═══════════════════════════════════════════════════════════════════════════════
-
+// ── Shared state ────────────────────────────────────────────────────────────────
 pub struct AppState {
     pub api_client: Arc<tokio::sync::Mutex<hwid::SecureApiClient>>,
     pub hwid: String,
@@ -28,51 +24,48 @@ impl AppState {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HWID COMMAND
-// ═══════════════════════════════════════════════════════════════════════════════
-
+// ── HWID ────────────────────────────────────────────────────────────────────────
 #[tauri::command]
 pub fn get_hwid() -> String {
     hwid::get_hwid()
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// AUTH COMMAND — Authenticate with server (JWT + HMAC salt)
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Server URL ──────────────────────────────────────────────────────────────────
+#[tauri::command]
+pub async fn set_server_url(server_url: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.api_client.lock().await.set_server_url(&server_url);
+    Ok(())
+}
 
+// ── Auth ────────────────────────────────────────────────────────────────────────
 #[tauri::command]
 pub async fn authenticate(
     token: String,
+    server_url: String,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let mut client = state.api_client.lock().await;
-    let result = client.authenticate(&token, &state.hwid).await;
-    // MutexGuard автоматически отпускается здесь (выходит из scope)
-    result
+    client.authenticate(&token, &state.hwid, &server_url).await
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// EXECUTE COMMAND — Send signed request to server
-// ═══════════════════════════════════════════════════════════════════════════════
-
+// ── OSINT (executed on the server) ───────────────────────────────────────────────
 #[tauri::command]
-pub async fn execute_action(
+pub async fn osint_run(
     token: String,
     module: String,
+    target: String,
     session_id: Option<String>,
+    findings: Option<Vec<String>>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let client = state.api_client.lock().await;
-    let result = client.execute(&module, &token, &state.hwid, session_id.as_deref(), &module).await;
-    // MutexGuard автоматически отпускается здесь
-    result
+    let findings = findings.unwrap_or_default();
+    client
+        .run_osint(&token, &state.hwid, &module, &target, session_id.as_deref(), &findings)
+        .await
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// CONFIG COMMANDS (encrypted with HWID-derived key)
-// ═══════════════════════════════════════════════════════════════════════════════
-
+// ── Config (encrypted with an HWID-derived key) ─────────────────────────────────
 #[tauri::command]
 pub fn save_config(key: &str, value: &str) -> Result<(), String> {
     let h = hwid::get_hwid();
@@ -109,86 +102,22 @@ fn config_path(key: &str) -> std::path::PathBuf {
     dir
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// OSINT SCAN (local execution — for modules that work offline)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Deserialize)]
-pub struct ScanRequest {
-    pub target: String,
-    pub target_type: String,
-    pub modules: Vec<String>,
-    pub nvidia_api_key: Option<String>,
+// ── Window controls (custom title bar) ──────────────────────────────────────────
+#[tauri::command]
+pub fn minimize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn osint_scan(req: ScanRequest) -> Result<Vec<osint::OsintEvent>, String> {
-    let mut all_events: Vec<osint::OsintEvent> = vec![];
-    let target = req.target.trim();
-
-    for module in &req.modules {
-        let events = match module.as_str() {
-            "social"  => osint::run_social_check(target).await,
-            "hibp"    => osint::run_hibp(target).await,
-            "ip"      => osint::run_ip(target).await,
-            "whois"   => osint::run_whois(target).await,
-            "dorks"   => osint::run_dorks(target),
-            "paste"   => osint::run_paste(target).await,
-            "darkweb" => osint::run_darkweb(target).await,
-            "phone"   => osint::run_phone(target).await,
-            "intelx"  => osint::run_intelx(target).await,
-            _         => vec![],
-        };
-        all_events.extend(events);
+pub fn maximize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
     }
-
-    // AI analysis if key provided
-    if let Some(api_key) = &req.nvidia_api_key {
-        if !api_key.is_empty() && req.modules.contains(&"ai".to_string()) {
-            let findings: Vec<String> = all_events.iter()
-                .filter(|e| e.kind == "found")
-                .map(|e| e.text.clone())
-                .collect();
-            let ai_events = osint::run_ai(target, &findings, api_key).await;
-            all_events.extend(ai_events);
-        }
-    }
-
-    Ok(all_events)
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SINGLE MODULE EXECUTION
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Deserialize)]
-pub struct ModuleRequest {
-    pub module: String,
-    pub target: String,
-    pub nvidia_api_key: Option<String>,
-    pub findings: Option<Vec<String>>,
 }
 
 #[tauri::command]
-pub async fn osint_module(req: ModuleRequest) -> Result<Vec<osint::OsintEvent>, String> {
-    let target = req.target.trim();
-    let events = match req.module.as_str() {
-        "social"  => osint::run_social_check(target).await,
-        "hibp"    => osint::run_hibp(target).await,
-        "ip"      => osint::run_ip(target).await,
-        "whois"   => osint::run_whois(target).await,
-        "dorks"   => osint::run_dorks(target),
-        "paste"   => osint::run_paste(target).await,
-        "darkweb" => osint::run_darkweb(target).await,
-        "phone"   => osint::run_phone(target).await,
-        "intelx"  => osint::run_intelx(target).await,
-        "ai" => {
-            let key = req.nvidia_api_key.as_deref().unwrap_or("");
-            let empty: Vec<String> = vec![];
-            let findings = req.findings.as_deref().unwrap_or(&empty);
-            osint::run_ai(target, findings, key).await
-        }
-        _ => vec![osint::OsintEvent::new("error", "error", format!("Неизвестный модуль: {}", req.module))],
-    };
-    Ok(events)
+pub fn close_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
 }

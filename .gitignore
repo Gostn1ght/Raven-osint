@@ -1,0 +1,22 @@
+# ── Secrets / local env (NEVER commit) ──────────────────────────────────────────
+.env
+.env.local
+*.env.local
+ravens-server/.env
+ravens-server/.env.local
+
+# ── Rust build artifacts ────────────────────────────────────────────────────────
+/target
+**/target/
+
+# ── Node ────────────────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Frontend build output ───────────────────────────────────────────────────────
+ravens-client/dist/
+
+# ── Runtime data / uploads (server state, contains tokens) ──────────────────────
+data/
+uploads/
+*.db
+ravens_nexus.db

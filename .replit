@@ -1,9 +1,9 @@
 language = "rust"
 run = "cargo run --release -p ravens-server"
-modules = ["rust-stable"]
+modules = ["rust-stable", "web", "nodejs-20"]
 
 [nix]
-channel = "stable-24_05"
+channel = "stable-25_05"
 
 [[ports]]
 localPort = 3000

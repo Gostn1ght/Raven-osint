@@ -98,6 +98,15 @@
   const mediaUrl = (u: string) => (u && u.startsWith("/") ? serverUrl + u : u);
   const isVideoAtt = (a: any) => (a?.mime || "").startsWith("video") || /\.(mp4|webm|mov)$/i.test(a?.url || "");
   const isImageAtt = (a: any) => (a?.mime || "").startsWith("image") || /\.(png|jpe?g|gif|webp)$/i.test(a?.url || "");
+  const attName = (a: any) => a?.name || (a?.url || "").split("/").pop() || "файл";
+  const fmtSize = (b: number) => !b ? "" : b < 1024 ? b + " Б" : b < 1048576 ? (b / 1024).toFixed(1) + " КБ" : (b / 1048576).toFixed(1) + " МБ";
+  const attIcon = (a: any) => {
+    const m = a?.mime || "", n = (a?.name || a?.url || "").toLowerCase();
+    if (m.startsWith("audio")) return "🎵";
+    if (/zip|rar|7z|tar|gz|compress/.test(m) || /\.(zip|rar|7z|tar|gz)$/.test(n)) return "🗜";
+    if (m.includes("pdf") || n.endsWith(".pdf")) return "📕";
+    return "📎";
+  };
 
   async function queueScroll() {
     if (!autoScroll) return;
@@ -505,7 +514,12 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
                     {:else if isImageAtt(att)}
                       <img class="att-media" src={mediaUrl(att.url)} alt="attachment" />
                     {:else}
-                      <a class="att-file" href={mediaUrl(att.url)} target="_blank" rel="noreferrer">📎 {att.url.split('/').pop()}</a>
+                      <a class="att-file" href={mediaUrl(att.url)} download={attName(att)} target="_blank" rel="noreferrer">
+                        <span class="att-ico">{attIcon(att)}</span>
+                        <span class="att-name">{attName(att)}</span>
+                        {#if att.size}<span class="att-sz">{fmtSize(att.size)}</span>{/if}
+                        <span class="att-dl">↓</span>
+                      </a>
                     {/if}
                   {/each}
                 </div>
@@ -920,7 +934,12 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
   .modal-text { font-size: 13px; line-height: 1.75; white-space: pre-wrap; color: #cdd2df; }
   .attachments { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
   .att-media { width: 100%; border-radius: 12px; max-height: 340px; object-fit: cover; background: #000; border: 1px solid var(--border); }
-  .att-file { font-size: 12px; color: var(--accent); }
+  .att-file { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: var(--text); font-size: 12px; transition: 0.15s; }
+  .att-file:hover { border-color: var(--border-hi); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .att-ico { font-size: 15px; flex-shrink: 0; }
+  .att-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att-sz { color: var(--dim); font-size: 11px; flex-shrink: 0; }
+  .att-dl { color: var(--accent); font-weight: 700; flex-shrink: 0; }
   .modal-close { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: rgba(0,0,0,0.5); color: var(--text); cursor: pointer; transition: 0.15s; }
   .modal-close:hover { background: var(--accent); color: #fff; }
 

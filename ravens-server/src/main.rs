@@ -37,6 +37,7 @@ use tokio::fs as tokio_fs;
 use tokio::io::AsyncWriteExt;
 
 const ADMIN_UI_HTML: &str = include_str!("../ui/admin.html");
+const FAVICON_SVG: &str = include_str!("../ui/favicon-red.svg");
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const SERVER_PORT: u16 = 3000;
@@ -141,6 +142,9 @@ pub struct UploadedFile {
     pub mime: String,
     pub size: u64,
     pub created_at: DateTime<Utc>,
+    /// Original filename (for download display), e.g. "report.zip".
+    #[serde(default)]
+    pub name: String,
 }
 
 // ── NewsItem ──────────────────────────────────────────────────────────────────
@@ -716,10 +720,38 @@ async fn rebind_token(
 }
 
 // ── File Upload ───────────────────────────────────────────────────────────────
-const MAX_IMAGE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
-const MAX_VIDEO_SIZE: u64 = 100 * 1024 * 1024; // 100MB
+const MAX_IMAGE_SIZE: u64 = 10 * 1024 * 1024;   // 10MB
+const MAX_VIDEO_SIZE: u64 = 100 * 1024 * 1024;  // 100MB
+const MAX_FILE_SIZE: u64 = 200 * 1024 * 1024;   // 200MB — archives / any attachment
 const ALLOWED_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 const ALLOWED_VIDEO_TYPES: &[&str] = &["video/mp4", "video/webm", "video/quicktime"];
+/// Extensions refused because they execute inline when served from our own origin
+/// (stored-XSS risk). Everything else — zip, pdf, docs, archives, binaries — is allowed.
+const BLOCKED_EXT: &[&str] = &["html", "htm", "xhtml", "shtml", "svg", "js", "mjs", "xml"];
+
+/// Picks a safe extension from the original filename, falling back to the MIME type.
+fn pick_ext(orig_name: Option<&str>, mime: &str) -> String {
+    if let Some(n) = orig_name {
+        if let Some(dot) = n.rfind('.') {
+            let e: String = n[dot + 1..].chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect::<String>().to_lowercase();
+            if !e.is_empty() { return e; }
+        }
+    }
+    match mime {
+        "image/png" => "png", "image/jpeg" => "jpg", "image/gif" => "gif", "image/webp" => "webp",
+        "video/mp4" => "mp4", "video/webm" => "webm", "video/quicktime" => "mov",
+        "application/zip" | "application/x-zip-compressed" => "zip",
+        "application/pdf" => "pdf", "application/x-7z-compressed" => "7z",
+        "application/x-rar-compressed" | "application/vnd.rar" => "rar",
+        _ => "bin",
+    }.to_string()
+}
+
+/// Strips any path components from a client-supplied filename.
+fn sanitize_name(n: &str) -> String {
+    let base = n.rsplit(['/', '\\']).next().unwrap_or(n);
+    base.chars().filter(|c| !c.is_control()).take(120).collect()
+}
 
 async fn upload_file(
     State(state): State<SharedState>,
@@ -728,7 +760,9 @@ async fn upload_file(
     let mut saved_files: Vec<UploadedFile> = Vec::new();
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        // Capture metadata BEFORE consuming the field body.
         let content_type = field.content_type().unwrap_or("application/octet-stream").to_string();
+        let orig_name = field.file_name().map(|s| s.to_string());
         let data = match field.bytes().await {
             Ok(d) => d,
             Err(_) => continue,
@@ -737,14 +771,13 @@ async fn upload_file(
 
         let is_image = ALLOWED_IMAGE_TYPES.contains(&content_type.as_str());
         let is_video = ALLOWED_VIDEO_TYPES.contains(&content_type.as_str());
-        if !is_image && !is_video { continue; }
-        if is_image && size > MAX_IMAGE_SIZE { continue; }
-        if is_video && size > MAX_VIDEO_SIZE { continue; }
+        // Per-category size cap; anything not image/video is a general attachment.
+        let limit = if is_image { MAX_IMAGE_SIZE } else if is_video { MAX_VIDEO_SIZE } else { MAX_FILE_SIZE };
+        if size == 0 || size > limit { continue; }
 
-        let ext = match content_type.as_str() {
-            "image/png" => "png", "image/jpeg" => "jpg", "image/gif" => "gif", "image/webp" => "webp",
-            "video/mp4" => "mp4", "video/webm" => "webm", "video/quicktime" => "mov", _ => "bin",
-        };
+        let ext = pick_ext(orig_name.as_deref(), &content_type);
+        if BLOCKED_EXT.contains(&ext.as_str()) { continue; }
+
         let filename = format!("{}.{}", Uuid::new_v4(), ext);
         let uploads_dir = StdPath::new("uploads");
         let _ = tokio_fs::create_dir_all(uploads_dir).await;
@@ -753,19 +786,21 @@ async fn upload_file(
             let _ = file.write_all(&data).await;
         }
 
+        let name = orig_name.as_deref().map(sanitize_name).filter(|s| !s.is_empty()).unwrap_or_else(|| filename.clone());
         let uploaded = UploadedFile {
             id: Uuid::new_v4().to_string(),
             url: format!("/uploads/{}", filename),
             mime: content_type,
             size,
             created_at: Utc::now(),
+            name,
         };
         state.uploads.write().unwrap().push(uploaded.clone());
         saved_files.push(uploaded);
     }
 
     if saved_files.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"No valid files uploaded"}))).into_response();
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"No valid files uploaded (empty, too large, or a blocked type)"}))).into_response();
     }
     (StatusCode::OK, Json(serde_json::json!({"ok":true,"files":saved_files}))).into_response()
 }
@@ -1291,6 +1326,9 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { Json(serde_json::json!({"status":"ok","service":"ravens-nexus-server","hint":"Open /admin-ui/admin.html"})) }))
         .route("/admin-ui/admin.html", get(|| async { Html(ADMIN_UI_HTML) }))
+        .route("/favicon.svg", get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "image/svg+xml")], FAVICON_SVG)
+        }))
         .nest("/admin", admin_routes)
         .nest("/api", api_routes)
         .route("/health", get(health_check))

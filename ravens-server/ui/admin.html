@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <title>Ravens Nexus — Admin</title>
 <style>
 :root {
@@ -197,6 +198,33 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 /* Media preview */
 .media-preview { width: 100%; max-height: 160px; object-fit: cover; border-radius: 8px; margin-top: 8px; }
 .media-thumb { width: 60px; height: 40px; object-fit: cover; border-radius: 4px; }
+
+/* Upload UI */
+.upload-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; margin-bottom: 6px; }
+.upload-btn span { font-size: 13px; line-height: 1; }
+.upload-status { font-size: 10px; color: var(--green); margin-bottom: 8px; min-height: 12px; word-break: break-all; }
+.dropzone { border: 2px dashed var(--border); border-radius: 10px; padding: 16px; text-align: center; cursor: pointer; margin-bottom: 8px; transition: border-color 0.15s, background 0.15s; }
+.dropzone.over, .dropzone:hover { border-color: var(--border-hi); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.upload-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.upload-item { display: flex; align-items: center; gap: 8px; padding: 6px 9px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 8px; font-size: 10px; }
+.upload-item .u-ico { flex-shrink: 0; font-size: 13px; }
+.upload-item .u-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-item .u-size { color: var(--dim); flex-shrink: 0; }
+.upload-item .u-del { flex-shrink: 0; color: var(--red); cursor: pointer; padding: 0 2px; }
+
+/* Banner editor */
+.editor-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(4,5,9,0.82); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.editor-box { width: 100%; max-width: 740px; background: var(--surface-solid); border: 1px solid var(--border-hi); border-radius: 18px; padding: 20px; box-shadow: 0 24px 70px rgba(0,0,0,0.6); }
+.editor-head { display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+.editor-close { cursor: pointer; color: var(--dim); font-size: 16px; }
+.editor-close:hover { color: var(--text); }
+.editor-stage { display: flex; justify-content: center; background: #05060a; border-radius: 12px; padding: 10px; }
+#editor-canvas { max-width: 100%; height: auto; border-radius: 8px; cursor: grab; touch-action: none; box-shadow: 0 0 0 2px var(--border-hi), 0 0 0 9999px rgba(4,5,9,0.35); }
+#editor-canvas:active { cursor: grabbing; }
+.editor-controls { display: flex; align-items: center; gap: 12px; margin: 16px 0 6px; }
+.editor-controls input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+.editor-hint { font-size: 10px; color: var(--dim); text-align: center; margin-bottom: 14px; }
+.editor-actions { display: flex; align-items: center; gap: 8px; }
 
 /* Toggle */
 .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 11px; color: var(--dim); }
@@ -561,17 +589,17 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
           <!-- File Upload -->
           <div class="divider"></div>
-          <div class="card-title">📎 ВЛОЖЕНИЯ</div>
-          <div id="upload-dropzone" style="border:2px dashed rgba(255,255,255,0.1);border-radius:8px;padding:16px;text-align:center;cursor:pointer;margin-bottom:8px"
-            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" 
-            ondragleave="this.style.borderColor='rgba(255,255,255,0.1)'"
+          <div class="card-title">📎 ВЛОЖЕНИЯ (любые файлы)</div>
+          <div id="upload-dropzone" class="dropzone"
+            ondragover="event.preventDefault();this.classList.add('over')"
+            ondragleave="this.classList.remove('over')"
             ondrop="handleDrop(event)"
             onclick="document.getElementById('file-input').click()">
             <div style="font-size:11px;color:var(--dim)">📁 Перетащите файлы сюда или нажмите</div>
-            <div style="font-size:9px;color:var(--dim);margin-top:4px">PNG, JPG, GIF, WebP (≤10MB) · MP4, WebM (≤100MB)</div>
-            <input type="file" id="file-input" multiple accept="image/*,video/*" style="display:none" onchange="handleFiles(this.files)" />
+            <div style="font-size:9px;color:var(--dim);margin-top:4px">ZIP · RAR · 7z · PDF · DOC · изображения · видео · любые файлы (≤200 МБ)</div>
+            <input type="file" id="file-input" multiple style="display:none" onchange="handleFiles(this.files)" />
           </div>
-          <div id="upload-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
+          <div id="upload-list" class="upload-list"></div>
 
           <button class="btn btn-primary" onclick="createNews()" style="width:100%">Опубликовать</button>
           <div id="cn-result" style="margin-top:8px;font-size:11px;display:none"></div>
@@ -580,18 +608,17 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <!-- Media settings -->
         <div class="card" style="width:280px;flex-shrink:0">
           <div class="card-title">🖼 БАННЕР (изображение / GIF)</div>
-          <button class="btn btn-primary btn-sm" style="width:100%;margin-bottom:6px" onclick="document.getElementById('banner-input').click()">⬆ Загрузить баннер на сервер</button>
+          <button type="button" class="btn btn-primary upload-btn" onclick="document.getElementById('banner-input').click()"><span>⬆</span> Загрузить и обрезать баннер</button>
           <input type="file" id="banner-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="uploadBanner(this.files[0])" />
-          <div style="font-size:9px;color:var(--dim);margin-bottom:8px">PNG · JPG · <b>GIF (анимация)</b> · WebP · ≤10MB — грузится прямо на сервер</div>
-          <div class="form-group" style="margin-bottom:12px">
-            <label class="label">…или URL картинки</label>
-            <input class="input" id="cn-image" placeholder="https://… или /uploads/…" oninput="previewMedia()" />
-          </div>
+          <input type="hidden" id="cn-image" />
+          <div id="banner-status" class="upload-status"></div>
+          <div style="font-size:9px;color:var(--dim);margin-bottom:12px">PNG · JPG · WebP — откроется редактор (кроп/зум, как в DC).<br><b>GIF</b> грузится как есть — анимация сохраняется. ≤10 МБ</div>
 
           <div class="card-title">🎬 ВИДЕО</div>
-          <button class="btn btn-primary btn-sm" style="width:100%;margin-bottom:6px" onclick="document.getElementById('video-input').click()">⬆ Загрузить видео на сервер</button>
+          <button type="button" class="btn btn-primary upload-btn" onclick="document.getElementById('video-input').click()"><span>⬆</span> Загрузить видео</button>
           <input type="file" id="video-input" accept="video/mp4,video/webm,video/quicktime" style="display:none" onchange="uploadVideo(this.files[0])" />
-          <div style="font-size:9px;color:var(--dim);margin-bottom:8px">MP4 · WebM · MOV · ≤100MB — воспроизводится в клиенте</div>
+          <div id="video-status" class="upload-status"></div>
+          <div style="font-size:9px;color:var(--dim);margin-bottom:8px">MP4 · WebM · MOV · ≤100 МБ</div>
           <div class="form-group" style="margin-bottom:10px">
             <label class="label">…или URL видео (MP4 / YouTube)</label>
             <input class="input" id="cn-video" placeholder="https://… или /uploads/…" oninput="previewMedia()" />
@@ -625,6 +652,31 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
   </div><!-- /main -->
 </div><!-- /app -->
+
+<!-- ── Banner editor (Discord-style crop / zoom) ──────────────────────────────── -->
+<div id="img-editor" class="editor-overlay" style="display:none">
+  <div class="editor-box">
+    <div class="editor-head">
+      <span>Редактировать баннер</span>
+      <span class="editor-close" onclick="closeEditor()">✕</span>
+    </div>
+    <div class="editor-stage">
+      <canvas id="editor-canvas" width="680" height="272"></canvas>
+    </div>
+    <div class="editor-controls">
+      <span title="Масштаб">🔍</span>
+      <input type="range" id="editor-zoom" min="1" max="4" step="0.01" value="1" oninput="drawEditor()" />
+      <button class="btn btn-xs" onclick="rotateEditor()" title="Повернуть">↻</button>
+    </div>
+    <div class="editor-hint">Перетаскивай изображение мышью · крути колесо для зума</div>
+    <div class="editor-actions">
+      <button class="btn btn-xs" onclick="resetEditor()">Сброс</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-xs" onclick="closeEditor()">Отмена</button>
+      <button class="btn btn-primary btn-xs" onclick="applyEditor()">Готово</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -983,6 +1035,8 @@ async function createNews() {
     ['cn-title','cn-preview','cn-text','cn-image','cn-video'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('media-preview-wrap').innerHTML = '<div style="color:var(--dim);font-size:10px">Загрузите баннер/видео или введите URL</div>';
     document.getElementById('upload-list').innerHTML = '';
+    document.getElementById('banner-status').textContent = '';
+    document.getElementById('video-status').textContent = '';
     uploadedFiles = [];
   } catch { toast('Ошибка', true); }
 }
@@ -1024,28 +1078,129 @@ async function deleteNews(id) {
 // Resolve a server-relative upload path (/uploads/…) against the server origin.
 function absUrl(u) { return u && u.startsWith('/') ? serverUrl + u : u; }
 
-// Upload a banner image (incl. animated GIF) straight to the server and use its URL.
-async function uploadBanner(file) {
+function fmtSize(b) {
+  if (b < 1024) return b + ' Б';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' КБ';
+  return (b / 1048576).toFixed(1) + ' МБ';
+}
+function fileIcon(mime, name) {
+  const m = mime || '', n = (name || '').toLowerCase();
+  if (m.startsWith('image')) return '🖼';
+  if (m.startsWith('video')) return '🎬';
+  if (m.startsWith('audio')) return '🎵';
+  if (/zip|rar|7z|tar|gz|compress/.test(m) || /\.(zip|rar|7z|tar|gz)$/.test(n)) return '🗜';
+  if (m.includes('pdf') || n.endsWith('.pdf')) return '📕';
+  return '📎';
+}
+
+function setBannerStatus(txt, color) {
+  const st = document.getElementById('banner-status');
+  st.style.color = color || 'var(--green)'; st.textContent = txt;
+}
+
+// GIF → upload as-is (keeps animation). Static image → open the crop/zoom editor.
+function uploadBanner(file) {
   if (!file) return;
-  toast('Загрузка баннера…');
+  if (file.type === 'image/gif') uploadBannerDirect(file);
+  else openEditor(file);
+}
+
+async function uploadBannerDirect(file) {
+  setBannerStatus('⏳ Загрузка…', 'var(--dim)');
   const files = await uploadFiles([file]);
   if (files && files[0]) {
     document.getElementById('cn-image').value = files[0].url;
     previewMedia();
-    toast('✓ Баннер загружен на сервер');
-  }
+    setBannerStatus('✓ ' + (files[0].name || files[0].url.split('/').pop()));
+  } else setBannerStatus('✗ Не удалось загрузить', 'var(--red)');
 }
+
+// ── Banner editor (crop / zoom / pan / rotate → exports the cropped banner) ─────
+const ED_W = 680, ED_H = 272; // banner aspect 2.5:1
+let ed = null;
+
+function openEditor(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    ed = { img, file, url, zoom: 1, rot: 0, offx: 0, offy: 0, base: 1, drag: false, lx: 0, ly: 0 };
+    fitEditor();
+    document.getElementById('img-editor').style.display = 'flex';
+    drawEditor();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); setBannerStatus('✗ Не удалось открыть изображение', 'var(--red)'); };
+  img.src = url;
+}
+
+function fitEditor() {
+  const iw = ed.rot % 2 ? ed.img.height : ed.img.width;
+  const ih = ed.rot % 2 ? ed.img.width : ed.img.height;
+  ed.base = Math.max(ED_W / iw, ED_H / ih); // "cover" the banner frame
+  ed.offx = 0; ed.offy = 0; ed.zoom = 1;
+  document.getElementById('editor-zoom').value = 1;
+}
+
+function paintEditor(ctx, w, h, mul) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(w / 2 + ed.offx * mul, h / 2 + ed.offy * mul);
+  ctx.rotate(ed.rot * Math.PI / 2);
+  const s = ed.base * ed.zoom * mul;
+  ctx.scale(s, s);
+  ctx.drawImage(ed.img, -ed.img.width / 2, -ed.img.height / 2);
+  ctx.restore();
+}
+
+function drawEditor() {
+  if (!ed) return;
+  ed.zoom = parseFloat(document.getElementById('editor-zoom').value);
+  paintEditor(document.getElementById('editor-canvas').getContext('2d'), ED_W, ED_H, 1);
+}
+
+function rotateEditor() { if (ed) { ed.rot = (ed.rot + 1) % 4; fitEditor(); drawEditor(); } }
+function resetEditor() { if (ed) { ed.rot = 0; fitEditor(); drawEditor(); } }
+function closeEditor() {
+  document.getElementById('img-editor').style.display = 'none';
+  if (ed && ed.url) URL.revokeObjectURL(ed.url);
+  ed = null;
+}
+
+async function applyEditor() {
+  if (!ed) return;
+  const out = document.createElement('canvas');
+  out.width = ED_W * 2; out.height = ED_H * 2; // export at 2× for crispness
+  paintEditor(out.getContext('2d'), out.width, out.height, 2);
+  out.toBlob(async (blob) => {
+    if (!blob) { setBannerStatus('✗ Ошибка обработки', 'var(--red)'); return; }
+    const base = (ed.file.name || 'banner').replace(/\.[^.]+$/, '');
+    const f = new File([blob], base + '_banner.png', { type: 'image/png' });
+    closeEditor();
+    await uploadBannerDirect(f);
+  }, 'image/png', 0.92);
+}
+
+// Mouse drag to pan + wheel to zoom (bound once; canvas exists at load).
+(function () {
+  const c = document.getElementById('editor-canvas');
+  if (!c) return;
+  const pt = (e) => { const r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * (ED_W / r.width), y: (e.clientY - r.top) * (ED_H / r.height) }; };
+  c.addEventListener('mousedown', (e) => { if (!ed) return; ed.drag = true; const p = pt(e); ed.lx = p.x; ed.ly = p.y; });
+  window.addEventListener('mousemove', (e) => { if (!ed || !ed.drag) return; const p = pt(e); ed.offx += p.x - ed.lx; ed.offy += p.y - ed.ly; ed.lx = p.x; ed.ly = p.y; drawEditor(); });
+  window.addEventListener('mouseup', () => { if (ed) ed.drag = false; });
+  c.addEventListener('wheel', (e) => { if (!ed) return; e.preventDefault(); const z = Math.min(4, Math.max(1, ed.zoom + (e.deltaY < 0 ? 0.08 : -0.08))); document.getElementById('editor-zoom').value = z; drawEditor(); }, { passive: false });
+})();
 
 // Upload a video straight to the server and use its URL.
 async function uploadVideo(file) {
   if (!file) return;
-  toast('Загрузка видео…');
+  const st = document.getElementById('video-status');
+  st.style.color = 'var(--dim)'; st.textContent = '⏳ Загрузка видео…';
   const files = await uploadFiles([file]);
   if (files && files[0]) {
     document.getElementById('cn-video').value = files[0].url;
     previewMedia();
-    toast('✓ Видео загружено на сервер');
-  }
+    st.style.color = 'var(--green)'; st.textContent = '✓ ' + (files[0].name || files[0].url.split('/').pop());
+  } else { st.style.color = 'var(--red)'; st.textContent = '✗ Не удалось загрузить'; }
 }
 
 function previewMedia() {
@@ -1233,24 +1388,27 @@ function handleDrop(e) {
   handleFiles(e.dataTransfer.files);
 }
 
-async function handleFiles(files) {
-  if (!files.length) return;
+function renderUploadList() {
   const list = document.getElementById('upload-list');
-  for (const f of files) {
-    const div = document.createElement('div');
-    div.style.cssText = 'font-size:10px;padding:4px 8px;background:rgba(0,0,0,0.3);border-radius:4px;display:flex;justify-content:space-between;align-items:center';
-    div.innerHTML = `<span>${f.name} (${(f.size/1024).toFixed(1)}KB)</span><span style="color:var(--dim)">загрузка...</span>`;
-    list.appendChild(div);
-  }
+  list.innerHTML = uploadedFiles.map((uf, i) => `
+    <div class="upload-item">
+      <span class="u-ico">${fileIcon(uf.mime, uf.name)}</span>
+      <span class="u-name" title="${(uf.name || '').replace(/"/g,'&quot;')}">${uf.name || uf.url.split('/').pop()}</span>
+      <span class="u-size">${fmtSize(uf.size || 0)}</span>
+      <span class="u-del" title="Убрать" onclick="uploadedFiles.splice(${i},1);renderUploadList()">✕</span>
+    </div>`).join('');
+}
+
+async function handleFiles(files) {
+  if (!files || !files.length) return;
+  const list = document.getElementById('upload-list');
+  const pending = document.createElement('div');
+  pending.className = 'upload-item';
+  pending.innerHTML = `<span class="u-ico">⏳</span><span class="u-name">Загрузка ${files.length} файл(ов)…</span>`;
+  list.appendChild(pending);
   const uploaded = await uploadFiles(Array.from(files));
-  uploadedFiles = uploadedFiles.concat(uploaded);
-  list.innerHTML = '';
-  uploadedFiles.forEach((uf, i) => {
-    const div = document.createElement('div');
-    div.style.cssText = 'font-size:10px;padding:4px 8px;background:rgba(0,0,0,0.3);border-radius:4px;display:flex;justify-content:space-between;align-items:center';
-    div.innerHTML = `<span>📎 ${uf.url.split('/').pop()}</span><span style="color:var(--accent);cursor:pointer" onclick="uploadedFiles.splice(${i},1);this.parentElement.remove()">✕</span>`;
-    list.appendChild(div);
-  });
+  if (uploaded && uploaded.length) uploadedFiles = uploadedFiles.concat(uploaded);
+  renderUploadList();
 }
 </script>
 </body>

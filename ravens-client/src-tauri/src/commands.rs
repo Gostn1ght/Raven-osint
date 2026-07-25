@@ -65,6 +65,33 @@ pub async fn osint_run(
         .await
 }
 
+// ── Discord OSINT (server-proxied) ───────────────────────────────────────────────
+#[tauri::command]
+pub async fn discord_osint_run(
+    token: String,
+    session_id: Option<String>,
+    endpoint: String,      // "guild-info" | "user-info" | "invite-info"
+    bot_token: String,
+    target: String,        // guild_id | user_id | invite_code
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = state.api_client.lock().await;
+    client.run_discord_osint(&token, &state.hwid, &endpoint, &bot_token, &target, session_id.as_deref()).await
+}
+
+// ── Telegram OSINT (server-proxied) ──────────────────────────────────────────────
+#[tauri::command]
+pub async fn telegram_osint_run(
+    token: String,
+    session_id: Option<String>,
+    bot_token: String,
+    target: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let client = state.api_client.lock().await;
+    client.run_telegram_osint(&token, &state.hwid, &bot_token, &target, session_id.as_deref()).await
+}
+
 // ── Config (encrypted with an HWID-derived key) ─────────────────────────────────
 #[tauri::command]
 pub fn save_config(key: &str, value: &str) -> Result<(), String> {

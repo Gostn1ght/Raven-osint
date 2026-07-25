@@ -288,6 +288,80 @@ impl SecureApiClient {
         Ok(json)
     }
 
+    /// Discord OSINT — proxied through the server (guild-info, user-info, invite-info).
+    pub async fn run_discord_osint(
+        &self,
+        token: &str,
+        hwid: &str,
+        endpoint: &str, // "guild-info" | "user-info" | "invite-info"
+        bot_token: &str,
+        target: &str,  // guild_id | user_id | invite_code
+        session_id: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let creds = self.credentials.as_ref().ok_or("Не аутентифицирован — активируйте токен")?;
+        let timestamp = current_timestamp();
+        let nonce = generate_nonce();
+        let signature = sign_request(hwid, &nonce, timestamp, &creds.hmac_salt);
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/discord/{}", self.server_url, endpoint);
+        // Build body depending on endpoint
+        let body = match endpoint {
+            "guild-info" => serde_json::json!({ "token": token, "hwid": hwid, "session_id": session_id, "bot_token": bot_token, "guild_id": target }),
+            "user-info"  => serde_json::json!({ "token": token, "hwid": hwid, "session_id": session_id, "bot_token": bot_token, "user_id":  target }),
+            _            => serde_json::json!({ "token": token, "hwid": hwid, "session_id": session_id, "invite_code": target }),
+        };
+        let response = client.post(&url)
+            .header("X-Auth-Token", &creds.jwt)
+            .header("X-HWID", hwid)
+            .header("X-Timestamp", timestamp.to_string())
+            .header("X-Nonce", &nonce)
+            .header("X-Signature", &signature)
+            .json(&body)
+            .send().await
+            .map_err(|e| format!("Network error: {}", e))?;
+        let status = response.status();
+        let json: serde_json::Value = response.json().await.map_err(|e| format!("Parse error: {}", e))?;
+        if !status.is_success() {
+            return Err(json["error"].as_str().unwrap_or("Ошибка сервера").to_string());
+        }
+        Ok(json["body"].clone())
+    }
+
+    /// Telegram OSINT — chat-info proxied through the server.
+    pub async fn run_telegram_osint(
+        &self,
+        token: &str,
+        hwid: &str,
+        bot_token: &str,
+        target: &str,
+        session_id: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let creds = self.credentials.as_ref().ok_or("Не аутентифицирован — активируйте токен")?;
+        let timestamp = current_timestamp();
+        let nonce = generate_nonce();
+        let signature = sign_request(hwid, &nonce, timestamp, &creds.hmac_salt);
+        let client = reqwest::Client::new();
+        let url = format!("{}/api/telegram/chat-info", self.server_url);
+        let response = client.post(&url)
+            .header("X-Auth-Token", &creds.jwt)
+            .header("X-HWID", hwid)
+            .header("X-Timestamp", timestamp.to_string())
+            .header("X-Nonce", &nonce)
+            .header("X-Signature", &signature)
+            .json(&serde_json::json!({
+                "token": token, "hwid": hwid, "session_id": session_id,
+                "bot_token": bot_token, "target": target,
+            }))
+            .send().await
+            .map_err(|e| format!("Network error: {}", e))?;
+        let status = response.status();
+        let json: serde_json::Value = response.json().await.map_err(|e| format!("Parse error: {}", e))?;
+        if !status.is_success() {
+            return Err(json["error"].as_str().unwrap_or("Ошибка сервера").to_string());
+        }
+        Ok(json["body"].clone())
+    }
+
     /// Runs an OSINT module on the server with a signed request. The server executes
     /// the reconnaissance and returns the resulting events.
     pub async fn run_osint(

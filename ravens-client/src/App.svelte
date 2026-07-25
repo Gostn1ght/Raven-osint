@@ -42,6 +42,22 @@
   let dcUsers: Array<{ token: string; info: any; status: "ok" | "error" }> = [];
   let dcAddingUser = false;
 
+  // ── Discord OSINT state ───────────────────────────────────────────────────────
+  let dcOsintGuildId = "";
+  let dcOsintGuildResult: any = null;
+  let dcOsintGuildLoading = false;
+  let dcOsintGuildError = "";
+  let dcOsintUserId = "";
+  let dcOsintUserResult: any = null;
+  let dcOsintUserLoading = false;
+  let dcOsintUserError = "";
+  let dcInviteInput = "";
+  let dcInviteResult: any = null;
+  let dcInviteLoading = false;
+  let dcInviteError = "";
+  let dcGatewayGuilds: any[] = [];
+  let dcGatewayLoaded = false;
+
   // ── Telegram ──────────────────────────────────────────────────────────────────
   let tgBotToken = "";
   let tgBotStatus: "idle" | "connecting" | "ok" | "error" = "idle";
@@ -51,6 +67,18 @@
   let tgPasswordInput = "";
   let tgAccounts: Array<{ phone: string; has2fa: boolean }> = [];
   let tgAddingAccount = false;
+
+  // ── Telegram OSINT state ──────────────────────────────────────────────────────
+  let tgOsintTarget = "";
+  let tgOsintResult: any = null;
+  let tgOsintLoading = false;
+  let tgOsintError = "";
+
+  // ── TG→DC forwarding config ───────────────────────────────────────────────────
+  let tgFwdConfigs: Array<{ tgChannel: string; dcChannelId: string; label: string }> = [];
+  let tgFwdTgInput = "";
+  let tgFwdDcIdInput = "";
+  let tgFwdLabelInput = "";
 
   // ── News ─────────────────────────────────────────────────────────────────────
   let news: any[] = [];
@@ -247,6 +275,12 @@
         } catch { tgAccounts = [...tgAccounts, { phone, has2fa: false }]; }
       }
     } catch {}
+
+    // ── Load TG→DC forwarding configs ────────────────────────────────────────
+    try {
+      const savedFwd = await invoke<string>("load_config", { key: "tg_fwd_configs" }).catch(() => "[]");
+      tgFwdConfigs = JSON.parse(savedFwd || "[]");
+    } catch {}
   });
 
   // ── Health ───────────────────────────────────────────────────────────────────
@@ -313,6 +347,8 @@
   }
   // Refresh the feed whenever the Ravens tab is opened.
   $: if (activeTab === "ravens" && serverUrl) fetchNews();
+  // Fetch gateway guilds when Discord tab is opened.
+  $: if (activeTab === "discord" && serverUrl) dcFetchGatewayGuilds();
   async function fetchNews() {
     if (!serverUrl) return;
     newsLoading = true;
@@ -504,6 +540,92 @@
     invoke("clear_config", { key: `tg_acc_${acc.phone.replace(/\D/g, "")}` }).catch(() => {});
     tgAccounts = tgAccounts.filter((_, idx) => idx !== i);
     invoke("save_config", { key: "tg_accounts", value: JSON.stringify(tgAccounts.map((a) => a.phone)) }).catch(() => {});
+  }
+
+  // ── Discord OSINT functions ───────────────────────────────────────────────────
+  async function dcLookupGuild() {
+    if (!dcOsintGuildId.trim() || dcOsintGuildLoading) return;
+    if (!tokenInput || !sessionId) { dcOsintGuildError = "Сначала активируйте лицензию"; return; }
+    dcOsintGuildLoading = true; dcOsintGuildError = ""; dcOsintGuildResult = null;
+    try {
+      const res: any = await invoke("discord_osint_run", {
+        token: tokenInput, sessionId, endpoint: "guild-info",
+        botToken: dcBotToken, target: dcOsintGuildId.trim(),
+      });
+      if (res?.ok) dcOsintGuildResult = res;
+      else dcOsintGuildError = res?.error || "Ошибка";
+    } catch (e: any) { dcOsintGuildError = `${e}`; }
+    dcOsintGuildLoading = false;
+  }
+
+  async function dcLookupUser() {
+    if (!dcOsintUserId.trim() || dcOsintUserLoading) return;
+    if (!tokenInput || !sessionId) { dcOsintUserError = "Сначала активируйте лицензию"; return; }
+    dcOsintUserLoading = true; dcOsintUserError = ""; dcOsintUserResult = null;
+    try {
+      const res: any = await invoke("discord_osint_run", {
+        token: tokenInput, sessionId, endpoint: "user-info",
+        botToken: dcBotToken, target: dcOsintUserId.trim(),
+      });
+      if (res?.ok) dcOsintUserResult = res;
+      else dcOsintUserError = res?.error || "Ошибка";
+    } catch (e: any) { dcOsintUserError = `${e}`; }
+    dcOsintUserLoading = false;
+  }
+
+  async function dcParseInvite() {
+    if (!dcInviteInput.trim() || dcInviteLoading) return;
+    if (!tokenInput || !sessionId) { dcInviteError = "Сначала активируйте лицензию"; return; }
+    dcInviteLoading = true; dcInviteError = ""; dcInviteResult = null;
+    try {
+      const res: any = await invoke("discord_osint_run", {
+        token: tokenInput, sessionId, endpoint: "invite-info",
+        botToken: "", target: dcInviteInput.trim(),
+      });
+      if (res?.ok) dcInviteResult = res;
+      else dcInviteError = res?.error || "Неверная ссылка";
+    } catch (e: any) { dcInviteError = `${e}`; }
+    dcInviteLoading = false;
+  }
+
+  async function dcFetchGatewayGuilds() {
+    if (!serverUrl || dcGatewayLoaded) return;
+    try {
+      const res = await fetch(`${serverUrl}/api/discord/state`);
+      if (res.ok) { const d = await res.json(); dcGatewayGuilds = d.guilds || []; dcGatewayLoaded = true; }
+    } catch {}
+  }
+
+  // ── Telegram OSINT functions ──────────────────────────────────────────────────
+  async function tgLookupChat() {
+    if (!tgOsintTarget.trim() || tgOsintLoading) return;
+    if (!tokenInput || !sessionId) { tgOsintError = "Сначала активируйте лицензию"; return; }
+    tgOsintLoading = true; tgOsintError = ""; tgOsintResult = null;
+    try {
+      const res: any = await invoke("telegram_osint_run", {
+        token: tokenInput, sessionId, botToken: tgBotToken, target: tgOsintTarget.trim(),
+      });
+      if (res?.ok) tgOsintResult = res;
+      else tgOsintError = res?.error || "Ошибка";
+    } catch (e: any) { tgOsintError = `${e}`; }
+    tgOsintLoading = false;
+  }
+
+  // ── TG→DC forwarding functions ────────────────────────────────────────────────
+  function addTgFwdConfig() {
+    if (!tgFwdTgInput.trim() || !tgFwdDcIdInput.trim()) return;
+    tgFwdConfigs = [...tgFwdConfigs, {
+      tgChannel: tgFwdTgInput.trim(),
+      dcChannelId: tgFwdDcIdInput.trim(),
+      label: tgFwdLabelInput.trim() || tgFwdTgInput.trim(),
+    }];
+    tgFwdTgInput = ""; tgFwdDcIdInput = ""; tgFwdLabelInput = "";
+    invoke("save_config", { key: "tg_fwd_configs", value: JSON.stringify(tgFwdConfigs) }).catch(() => {});
+  }
+
+  function removeTgFwdConfig(i: number) {
+    tgFwdConfigs = tgFwdConfigs.filter((_, idx) => idx !== i);
+    invoke("save_config", { key: "tg_fwd_configs", value: JSON.stringify(tgFwdConfigs) }).catch(() => {});
   }
 
   // ── Dossier export ───────────────────────────────────────────────────────────
@@ -802,19 +924,19 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
         <div class="section-head">
           <div>
             <div class="section-title">💬 Discord</div>
-            <div class="section-sub">Подключите бота и пользовательские аккаунты</div>
+            <div class="section-sub">OSINT, управление аккаунтами, парсинг серверов</div>
           </div>
         </div>
 
-        <!-- Bot card -->
+        <!-- ── BOT CONNECTION ─────────────────────────────────────────────────── -->
         <div class="intg-card">
-          <div class="panel-title">БОТ</div>
+          <div class="panel-title">БОТ · ПОДКЛЮЧЕНИЕ</div>
           {#if dcBotStatus === "ok" && dcBotInfo}
             <div class="intg-connected">
               <div class="intg-avatar dc">🤖</div>
               <div class="intg-info">
                 <div class="intg-name">{dcBotInfo.username}{dcBotInfo.discriminator && dcBotInfo.discriminator !== "0" ? "#" + dcBotInfo.discriminator : ""}</div>
-                <div class="dim sm">ID: {dcBotInfo.id} · Bot</div>
+                <div class="dim sm">ID: {dcBotInfo.id} · Bot · application_id: {dcBotInfo.id}</div>
               </div>
               <span class="badge-conn">● ONLINE</span>
               <button class="btn ghost sm" on:click={disconnectDiscordBot}>Отключить</button>
@@ -833,13 +955,148 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
               </div>
               {#if dcBotError}<div class="intg-err">✗ {dcBotError}</div>{/if}
             </div>
-            <div class="hint">Создайте приложение на <a href="https://discord.com/developers/applications" target="_blank">discord.com/developers</a>, перейдите в Bot → Token.</div>
+            <div class="hint">Создайте приложение на <a href="https://discord.com/developers/applications" target="_blank">discord.com/developers</a> → Bot → Token.</div>
           {/if}
         </div>
 
-        <!-- User accounts card -->
+        <!-- ── BOT OSINT: GUILD LOOKUP ────────────────────────────────────────── -->
+        {#if dcBotStatus === "ok"}
         <div class="intg-card">
-          <div class="panel-title">ПОЛЬЗОВАТЕЛИ · {dcUsers.length}</div>
+          <div class="panel-title">БОТ · OSINT — СЕРВЕР</div>
+          <div class="hint" style="margin-bottom:10px">Введите Guild ID (бот должен состоять в сервере). Получите ID через режим разработчика Discord.</div>
+          <div class="field">
+            <div class="row">
+              <input class="input grow mono" bind:value={dcOsintGuildId} placeholder="Guild ID (18-значное число)"
+                on:keydown={(e) => e.key === "Enter" && dcLookupGuild()} />
+              <button class="btn primary sm" on:click={dcLookupGuild} disabled={dcOsintGuildLoading || !dcOsintGuildId}>
+                {dcOsintGuildLoading ? "⏳" : "Поиск"}
+              </button>
+            </div>
+            {#if dcOsintGuildError}<div class="intg-err">✗ {dcOsintGuildError}</div>{/if}
+          </div>
+          {#if dcOsintGuildResult}
+            {@const g = dcOsintGuildResult.guild}
+            <div class="osint-result">
+              {#if g.icon}<img class="osint-icon" src="https://cdn.discordapp.com/icons/{g.id}/{g.icon}.webp?size=64" alt="icon" />{/if}
+              <div class="osint-main">
+                <div class="osint-title">{g.name}</div>
+                <div class="osint-row"><span class="osint-lbl">ID</span><span class="mono">{g.id}</span></div>
+                <div class="osint-row"><span class="osint-lbl">Владелец</span><span class="mono">{g.owner_id}</span></div>
+                <div class="osint-row"><span class="osint-lbl">Участники</span>{g.approximate_member_count ?? g.member_count ?? "—"}</div>
+                <div class="osint-row"><span class="osint-lbl">Онлайн</span>{g.approximate_presence_count ?? "—"}</div>
+                <div class="osint-row"><span class="osint-lbl">Регион</span>{g.preferred_locale ?? "—"}</div>
+                <div class="osint-row"><span class="osint-lbl">Создан</span>{g.id ? new Date(Number((BigInt(g.id) >> 22n) + 1420070400000n)).toLocaleDateString("ru") : "—"}</div>
+                {#if g.description}<div class="osint-row"><span class="osint-lbl">Описание</span>{g.description}</div>{/if}
+                {#if g.vanity_url_code}<div class="osint-row"><span class="osint-lbl">Vanity</span>discord.gg/{g.vanity_url_code}</div>{/if}
+                {#if g.features?.length}<div class="osint-row"><span class="osint-lbl">Функции</span><span class="mono" style="font-size:10px">{g.features.join(", ")}</span></div>{/if}
+                {#if dcOsintGuildResult.channels?.length}
+                  <div class="osint-row"><span class="osint-lbl">Каналы ({dcOsintGuildResult.channels.length})</span></div>
+                  <div class="osint-chanlist">
+                    {#each dcOsintGuildResult.channels.slice(0, 30) as c}
+                      <div class="osint-chan">{c.type === 0 ? "💬" : c.type === 2 ? "🔊" : c.type === 4 ? "📁" : "•"} {c.name}<span class="dim sm"> {c.id}</span></div>
+                    {/each}
+                    {#if dcOsintGuildResult.channels.length > 30}<div class="dim sm">... и ещё {dcOsintGuildResult.channels.length - 30}</div>{/if}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <!-- ── BOT OSINT: USER LOOKUP ─────────────────────────────────────────── -->
+        <div class="intg-card">
+          <div class="panel-title">БОТ · OSINT — ПОЛЬЗОВАТЕЛЬ</div>
+          <div class="hint" style="margin-bottom:10px">Поиск пользователя Discord по ID. Работает для любого публичного аккаунта.</div>
+          <div class="field">
+            <div class="row">
+              <input class="input grow mono" bind:value={dcOsintUserId} placeholder="User ID (18-значное число)"
+                on:keydown={(e) => e.key === "Enter" && dcLookupUser()} />
+              <button class="btn primary sm" on:click={dcLookupUser} disabled={dcOsintUserLoading || !dcOsintUserId}>
+                {dcOsintUserLoading ? "⏳" : "Поиск"}
+              </button>
+            </div>
+            {#if dcOsintUserError}<div class="intg-err">✗ {dcOsintUserError}</div>{/if}
+          </div>
+          {#if dcOsintUserResult}
+            {@const u = dcOsintUserResult.user}
+            <div class="osint-result">
+              {#if u.avatar}<img class="osint-icon" src="https://cdn.discordapp.com/avatars/{u.id}/{u.avatar}.webp?size=64" alt="avatar" />{/if}
+              <div class="osint-main">
+                <div class="osint-title">{u.username}{u.discriminator && u.discriminator !== "0" ? "#" + u.discriminator : ""}</div>
+                <div class="osint-row"><span class="osint-lbl">ID</span><span class="mono">{u.id}</span></div>
+                <div class="osint-row"><span class="osint-lbl">Бот</span>{u.bot ? "✓ Да" : "Нет"}</div>
+                <div class="osint-row"><span class="osint-lbl">Создан</span>{u.id ? new Date(Number((BigInt(u.id) >> 22n) + 1420070400000n)).toLocaleDateString("ru") : "—"}</div>
+                {#if u.global_name}<div class="osint-row"><span class="osint-lbl">Global name</span>{u.global_name}</div>{/if}
+                {#if u.public_flags}<div class="osint-row"><span class="osint-lbl">Badges</span><span class="mono">{u.public_flags}</span></div>{/if}
+                {#if u.banner_color}<div class="osint-row"><span class="osint-lbl">Цвет профиля</span>{u.banner_color}</div>{/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <!-- ── BOT GUILDS ─────────────────────────────────────────────────────── -->
+        {#if dcGatewayGuilds.length > 0}
+        <div class="intg-card">
+          <div class="panel-title">БОТ · СЕРВЕРЫ ({dcGatewayGuilds.length})</div>
+          <div class="hint" style="margin-bottom:8px">Серверы, на которых состоит бот (данные Gateway).</div>
+          <div class="intg-list">
+            {#each dcGatewayGuilds as gld}
+              <div class="intg-row" style="cursor:pointer" on:click={() => { dcOsintGuildId = gld.id; dcLookupGuild(); }}>
+                <div class="intg-avatar dc" style="font-size:14px">🏠</div>
+                <div class="intg-info">
+                  <div class="intg-name">{gld.name}</div>
+                  <div class="dim sm">ID: {gld.id} · {gld.member_count} участников · {gld.channels?.length ?? 0} каналов</div>
+                </div>
+                <span class="dim sm" style="flex-shrink:0">→ OSINT</span>
+              </div>
+            {/each}
+          </div>
+        </div>
+        {/if}
+        {/if}
+
+        <!-- ── INVITE / SERVER PARSER ─────────────────────────────────────────── -->
+        <div class="intg-card">
+          <div class="panel-title">ПАРСЕР СЕРВЕРА — по ссылке-приглашению</div>
+          <div class="hint" style="margin-bottom:10px">Парсит публичную информацию сервера Discord по invite-ссылке. Не требует токена бота.</div>
+          <div class="field">
+            <div class="row">
+              <input class="input grow" bind:value={dcInviteInput} placeholder="https://discord.gg/... или просто код"
+                on:keydown={(e) => e.key === "Enter" && dcParseInvite()} />
+              <button class="btn primary sm" on:click={dcParseInvite} disabled={dcInviteLoading || !dcInviteInput}>
+                {dcInviteLoading ? "⏳" : "Парсить"}
+              </button>
+            </div>
+            {#if dcInviteError}<div class="intg-err">✗ {dcInviteError}</div>{/if}
+          </div>
+          {#if dcInviteResult}
+            {@const inv = dcInviteResult.invite}
+            {@const srv = inv.guild}
+            <div class="osint-result">
+              {#if srv?.icon}<img class="osint-icon" src="https://cdn.discordapp.com/icons/{srv.id}/{srv.icon}.webp?size=64" alt="icon" />{/if}
+              <div class="osint-main">
+                <div class="osint-title">{srv?.name ?? "Неизвестно"}</div>
+                <div class="osint-row"><span class="osint-lbl">Guild ID</span><span class="mono">{srv?.id ?? "—"}</span></div>
+                <div class="osint-row"><span class="osint-lbl">Код</span><span class="mono">{inv.code}</span></div>
+                <div class="osint-row"><span class="osint-lbl">Участники</span>{inv.approximate_member_count ?? "—"}</div>
+                <div class="osint-row"><span class="osint-lbl">Онлайн</span>{inv.approximate_presence_count ?? "—"}</div>
+                <div class="osint-row"><span class="osint-lbl">Тип</span>{inv.type === 0 ? "Постоянная" : inv.type === 1 ? "Временная" : "—"}</div>
+                {#if inv.expires_at}<div class="osint-row"><span class="osint-lbl">Истекает</span>{new Date(inv.expires_at).toLocaleString("ru")}</div>{/if}
+                {#if inv.inviter}<div class="osint-row"><span class="osint-lbl">Создал</span>{inv.inviter.username} · <span class="mono">{inv.inviter.id}</span></div>{/if}
+                {#if inv.channel}<div class="osint-row"><span class="osint-lbl">Канал</span>#{inv.channel.name} · <span class="mono">{inv.channel.id}</span></div>{/if}
+                {#if srv?.description}<div class="osint-row"><span class="osint-lbl">Описание</span>{srv.description}</div>{/if}
+                {#if srv?.vanity_url_code}<div class="osint-row"><span class="osint-lbl">Vanity</span>discord.gg/{srv.vanity_url_code}</div>{/if}
+                {#if srv?.features?.length}<div class="osint-row"><span class="osint-lbl">Функции</span><span class="mono" style="font-size:10px">{srv.features.join(", ")}</span></div>{/if}
+                {#if srv?.nsfw_level !== undefined}<div class="osint-row"><span class="osint-lbl">NSFW уровень</span>{srv.nsfw_level}</div>{/if}
+                {#if srv?.verification_level !== undefined}<div class="osint-row"><span class="osint-lbl">Верификация</span>{["Нет","Низкий","Средний","Высокий","Очень высокий"][srv.verification_level] ?? srv.verification_level}</div>{/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <!-- ── USER ACCOUNTS ──────────────────────────────────────────────────── -->
+        <div class="intg-card">
+          <div class="panel-title">АККАУНТЫ · {dcUsers.length}</div>
           {#if dcUsers.length > 0}
             <div class="intg-list">
               {#each dcUsers as u, i}
@@ -881,19 +1138,19 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
         <div class="section-head">
           <div>
             <div class="section-title">✈ Telegram</div>
-            <div class="section-sub">Подключите бота и аккаунты пользователей</div>
+            <div class="section-sub">OSINT через бота, аккаунты, пересылка в Discord</div>
           </div>
         </div>
 
-        <!-- Bot card -->
+        <!-- ── BOT CONNECTION ─────────────────────────────────────────────────── -->
         <div class="intg-card">
-          <div class="panel-title">БОТ</div>
+          <div class="panel-title">БОТ · ПОДКЛЮЧЕНИЕ</div>
           {#if tgBotStatus === "ok" && tgBotInfo}
             <div class="intg-connected">
               <div class="intg-avatar tg">🤖</div>
               <div class="intg-info">
                 <div class="intg-name">@{tgBotInfo.username}</div>
-                <div class="dim sm">{tgBotInfo.first_name} · ID: {tgBotInfo.id}</div>
+                <div class="dim sm">{tgBotInfo.first_name} · ID: {tgBotInfo.id}{tgBotInfo.can_join_groups ? " · может вступать в группы" : ""}</div>
               </div>
               <span class="badge-conn">● ONLINE</span>
               <button class="btn ghost sm" on:click={disconnectTgBot}>Отключить</button>
@@ -916,7 +1173,61 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
           {/if}
         </div>
 
-        <!-- User accounts card -->
+        <!-- ── BOT OSINT: CHAT / CHANNEL LOOKUP ───────────────────────────────── -->
+        {#if tgBotStatus === "ok"}
+        <div class="intg-card">
+          <div class="panel-title">БОТ · OSINT — ЧАТ / КАНАЛ</div>
+          <div class="hint" style="margin-bottom:10px">Введите @username публичного канала/группы или числовой chat_id. Бот должен быть в чате для получения списка администраторов.</div>
+          <div class="field">
+            <div class="row">
+              <input class="input grow mono" bind:value={tgOsintTarget} placeholder="@channel или -100xxxxxxxxxx"
+                on:keydown={(e) => e.key === "Enter" && tgLookupChat()} />
+              <button class="btn primary sm" on:click={tgLookupChat} disabled={tgOsintLoading || !tgOsintTarget}>
+                {tgOsintLoading ? "⏳" : "Поиск"}
+              </button>
+            </div>
+            {#if tgOsintError}<div class="intg-err">✗ {tgOsintError}</div>{/if}
+          </div>
+          {#if tgOsintResult}
+            {@const c = tgOsintResult.chat}
+            <div class="osint-result">
+              {#if c.photo?.big_file_id || c.username}
+                <div class="intg-avatar tg" style="width:48px;height:48px;font-size:22px">
+                  {c.type === "channel" ? "📢" : c.type === "supergroup" || c.type === "group" ? "👥" : "👤"}
+                </div>
+              {/if}
+              <div class="osint-main">
+                <div class="osint-title">{c.title ?? c.first_name ?? "—"}</div>
+                {#if c.username}<div class="osint-row"><span class="osint-lbl">Username</span><a href="https://t.me/{c.username}" target="_blank">@{c.username}</a></div>{/if}
+                <div class="osint-row"><span class="osint-lbl">ID</span><span class="mono">{c.id}</span></div>
+                <div class="osint-row"><span class="osint-lbl">Тип</span>{c.type}</div>
+                {#if tgOsintResult.member_count !== null && tgOsintResult.member_count !== undefined}
+                  <div class="osint-row"><span class="osint-lbl">Участников</span>{tgOsintResult.member_count.toLocaleString("ru")}</div>
+                {/if}
+                {#if c.description}<div class="osint-row"><span class="osint-lbl">Описание</span>{c.description}</div>{/if}
+                {#if c.invite_link}<div class="osint-row"><span class="osint-lbl">Invite</span><a href="{c.invite_link}" target="_blank">{c.invite_link}</a></div>{/if}
+                {#if c.is_verified}<div class="osint-row"><span class="osint-lbl">Статус</span>✓ Верифицирован</div>{/if}
+                {#if c.is_scam}<div class="osint-row"><span class="osint-lbl">Статус</span><span style="color:#fca5a5">⚠ Скам</span></div>{/if}
+                {#if c.slow_mode_delay}<div class="osint-row"><span class="osint-lbl">Slow mode</span>{c.slow_mode_delay}с</div>{/if}
+                {#if tgOsintResult.admins && Array.isArray(tgOsintResult.admins) && tgOsintResult.admins.length > 0}
+                  <div class="osint-row"><span class="osint-lbl">Администраторы ({tgOsintResult.admins.length})</span></div>
+                  {#each tgOsintResult.admins as adm}
+                    <div class="osint-chan">
+                      {adm.status === "creator" ? "👑" : "🛡"} 
+                      {adm.user?.first_name ?? ""}{adm.user?.last_name ? " " + adm.user.last_name : ""}
+                      {adm.user?.username ? " @" + adm.user.username : ""}
+                      <span class="dim sm"> · {adm.user?.id}</span>
+                      {#if adm.custom_title}<span class="dim sm"> · {adm.custom_title}</span>{/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+        {/if}
+
+        <!-- ── USER ACCOUNTS ──────────────────────────────────────────────────── -->
         <div class="intg-card">
           <div class="panel-title">АККАУНТЫ · {tgAccounts.length}</div>
           {#if tgAccounts.length > 0}
@@ -926,9 +1237,7 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
                   <div class="intg-avatar tg">👤</div>
                   <div class="intg-info">
                     <div class="intg-name">{acc.phone}</div>
-                    <div class="dim sm">
-                      {#if acc.has2fa}🔐 Облачный пароль сохранён{:else}Без облачного пароля{/if}
-                    </div>
+                    <div class="dim sm">{#if acc.has2fa}🔐 Облачный пароль сохранён{:else}Без облачного пароля{/if}</div>
                   </div>
                   <button class="btn ghost sm intg-del" on:click={() => removeTgAccount(i)}>✕</button>
                 </div>
@@ -944,11 +1253,50 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
             <label class="lbl">Облачный пароль (2FA) — если включён</label>
             <input class="input" type="password" bind:value={tgPasswordInput}
               placeholder="Оставьте пустым, если 2FA не установлен" />
-            <div class="hint">Пароль шифруется вашим HWID и хранится локально. Проверка 2FA происходит при подключении через сервер (MTProto).</div>
+            <div class="hint">Пароль шифруется HWID и хранится локально.</div>
           </div>
           <button class="btn primary sm" on:click={addTgAccount} disabled={!tgPhoneInput || tgAddingAccount}>
             {tgAddingAccount ? "⏳" : "+ Добавить аккаунт"}
           </button>
+        </div>
+
+        <!-- ── TG→DC FORWARDING ────────────────────────────────────────────────── -->
+        <div class="intg-card">
+          <div class="panel-title">TG → DISCORD · ПЕРЕСЫЛКА</div>
+          <div class="hint warn-hint" style="margin-bottom:12px">
+            ⚙ Конфигурация пересылки сообщений из TG-каналов через Discord бота. Пересылка активируется когда MTProto (Telegram аккаунт) будет подключён к серверу.
+          </div>
+          {#if tgFwdConfigs.length > 0}
+            <div class="intg-list" style="margin-bottom:12px">
+              {#each tgFwdConfigs as cfg, i}
+                <div class="intg-row">
+                  <div class="intg-avatar tg" style="font-size:14px">✈</div>
+                  <div class="intg-info">
+                    <div class="intg-name">{cfg.label}</div>
+                    <div class="dim sm">{cfg.tgChannel} → DC канал <span class="mono">{cfg.dcChannelId}</span></div>
+                  </div>
+                  <button class="btn ghost sm intg-del" on:click={() => removeTgFwdConfig(i)}>✕</button>
+                </div>
+              {/each}
+            </div>
+            <div class="divider"></div>
+          {/if}
+          <div class="field">
+            <label class="lbl">TG канал/группа (@username или ID)</label>
+            <input class="input mono" bind:value={tgFwdTgInput} placeholder="@channel или -100xxxxxxxxxx" />
+          </div>
+          <div class="field">
+            <label class="lbl">Discord Channel ID (куда пересылать)</label>
+            <input class="input mono" bind:value={tgFwdDcIdInput} placeholder="Числовой ID канала Discord" />
+          </div>
+          <div class="field">
+            <label class="lbl">Метка (опционально)</label>
+            <input class="input" bind:value={tgFwdLabelInput} placeholder="Например: Новости → Общий" />
+          </div>
+          <button class="btn sm" on:click={addTgFwdConfig} disabled={!tgFwdTgInput || !tgFwdDcIdInput}>+ Добавить правило</button>
+          {#if !dcBotStatus || dcBotStatus !== "ok"}
+            <div class="hint" style="margin-top:10px">⚠ Для пересылки нужен подключённый Discord бот (вкладка Discord).</div>
+          {/if}
         </div>
       </div>
 
@@ -1361,6 +1709,20 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
   .scroll::-webkit-scrollbar-thumb, .console::-webkit-scrollbar-thumb, .scrolly::-webkit-scrollbar-thumb, .grow::-webkit-scrollbar-thumb {
     background: color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 3px;
   }
+
+  /* ── OSINT result panels ──────────────────────────────────────────────────── */
+  .osint-result {
+    display: flex; gap: 14px; margin-top: 12px;
+    padding: 14px; border-radius: 10px;
+    background: rgba(0,0,0,0.28); border: 1px solid var(--border-hi);
+  }
+  .osint-icon { width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; object-fit: cover; }
+  .osint-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .osint-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .osint-row { display: flex; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+  .osint-lbl { color: var(--accent); font-weight: 600; min-width: 100px; flex-shrink: 0; }
+  .osint-chanlist { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+  .osint-chan { font-size: 11px; color: var(--text2); padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.03); }
 
   /* ── Discord / Telegram integration cards ─────────────────────────────────── */
   .intg-card {

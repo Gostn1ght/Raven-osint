@@ -93,9 +93,9 @@ impl Tier {
     pub fn allowed_modules(&self) -> Vec<&str> {
         match self {
             Tier::Free => vec!["social", "ip_geo", "whois"],
-            Tier::Pro => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone"],
+            Tier::Pro => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "discord_osint", "telegram_osint"],
             Tier::Elite | Tier::Admin => vec![
-                "social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "intelx", "ai",
+                "social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "intelx", "ai", "discord_osint", "telegram_osint",
             ],
         }
     }
@@ -851,6 +851,198 @@ async fn discord_state(State(state): State<SharedState>) -> impl IntoResponse {
     Json(serde_json::to_value(state.discord_gateway.get_state()).unwrap())
 }
 
+// ── Discord / Telegram OSINT request structs ──────────────────────────────────
+#[derive(Deserialize)]
+pub struct DcGuildReq {
+    pub token: String, pub hwid: String, pub session_id: Option<String>,
+    pub bot_token: String, pub guild_id: String,
+}
+#[derive(Deserialize)]
+pub struct DcUserReq {
+    pub token: String, pub hwid: String, pub session_id: Option<String>,
+    pub bot_token: String, pub user_id: String,
+}
+#[derive(Deserialize)]
+pub struct DcInviteReq {
+    pub token: String, pub hwid: String, pub session_id: Option<String>,
+    pub invite_code: String,
+}
+#[derive(Deserialize)]
+pub struct TgChatReq {
+    pub token: String, pub hwid: String, pub session_id: Option<String>,
+    pub bot_token: String, pub target: String,
+}
+
+// ── Discord OSINT: Guild Info ─────────────────────────────────────────────────
+async fn dc_guild_info(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Json(req): Json<DcGuildReq>,
+) -> impl IntoResponse {
+    let token = req.token.trim().to_uppercase();
+    if let Err((code, body)) = authorize_and_consume(&state, &headers, &token, req.hwid.trim(), "discord_osint", &req.session_id) {
+        return (code, Json(body)).into_response();
+    }
+    let guild_id = req.guild_id.trim().to_string();
+    if guild_id.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"ok":false,"error":"Укажите Guild ID"}))).into_response();
+    }
+    let bot_auth = format!("Bot {}", req.bot_token.trim());
+    let http = reqwest::Client::new();
+    let guild_url = format!("https://discord.com/api/v10/guilds/{}?with_counts=true", guild_id);
+    match http.get(&guild_url)
+        .header("Authorization", &bot_auth)
+        .header("User-Agent", "DiscordBot (ravens-nexus, 1.0)")
+        .send().await
+    {
+        Ok(r) if r.status().is_success() => {
+            let guild: serde_json::Value = r.json().await.unwrap_or_default();
+            let chan_url = format!("https://discord.com/api/v10/guilds/{}/channels", guild_id);
+            let channels: serde_json::Value = match http.get(&chan_url)
+                .header("Authorization", &bot_auth)
+                .header("User-Agent", "DiscordBot (ravens-nexus, 1.0)")
+                .send().await
+            {
+                Ok(r) if r.status().is_success() => r.json().await.unwrap_or(serde_json::json!([])),
+                _ => serde_json::json!([]),
+            };
+            signed_envelope(serde_json::json!({ "ok": true, "guild": guild, "channels": channels })).into_response()
+        }
+        Ok(r) => {
+            let s = r.status().as_u16();
+            let e = match s {
+                401 => "Неверный токен бота",
+                403 => "Нет доступа (бот не состоит в этом сервере)",
+                404 => "Сервер не найден",
+                _ => "Ошибка Discord API",
+            };
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"ok":false,"error":e}))).into_response()
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"ok":false,"error":format!("Ошибка сети: {}",e)}))).into_response(),
+    }
+}
+
+// ── Discord OSINT: User Info ──────────────────────────────────────────────────
+async fn dc_user_info(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Json(req): Json<DcUserReq>,
+) -> impl IntoResponse {
+    let token = req.token.trim().to_uppercase();
+    if let Err((code, body)) = authorize_and_consume(&state, &headers, &token, req.hwid.trim(), "discord_osint", &req.session_id) {
+        return (code, Json(body)).into_response();
+    }
+    let user_id = req.user_id.trim().to_string();
+    if user_id.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"ok":false,"error":"Укажите User ID"}))).into_response();
+    }
+    let http = reqwest::Client::new();
+    let url = format!("https://discord.com/api/v10/users/{}", user_id);
+    match http.get(&url)
+        .header("Authorization", format!("Bot {}", req.bot_token.trim()))
+        .header("User-Agent", "DiscordBot (ravens-nexus, 1.0)")
+        .send().await
+    {
+        Ok(r) if r.status().is_success() => {
+            let user: serde_json::Value = r.json().await.unwrap_or_default();
+            signed_envelope(serde_json::json!({ "ok": true, "user": user })).into_response()
+        }
+        Ok(r) => {
+            let s = r.status().as_u16();
+            let e = match s { 401 => "Неверный токен бота", 404 => "Пользователь не найден", _ => "Ошибка Discord API" };
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"ok":false,"error":e}))).into_response()
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"ok":false,"error":format!("Ошибка сети: {}",e)}))).into_response(),
+    }
+}
+
+// ── Discord OSINT: Invite / Server Parser ─────────────────────────────────────
+async fn dc_invite_info(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Json(req): Json<DcInviteReq>,
+) -> impl IntoResponse {
+    let token = req.token.trim().to_uppercase();
+    if let Err((code, body)) = authorize_and_consume(&state, &headers, &token, req.hwid.trim(), "discord_osint", &req.session_id) {
+        return (code, Json(body)).into_response();
+    }
+    // Accept full URL or just the code
+    let raw = req.invite_code.trim();
+    let code = raw.split('/').last().unwrap_or("").trim().to_string();
+    if code.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"ok":false,"error":"Неверная ссылка-приглашение"}))).into_response();
+    }
+    let http = reqwest::Client::new();
+    let url = format!("https://discord.com/api/v10/invites/{}?with_counts=true&with_expiration=true", code);
+    match http.get(&url)
+        .header("User-Agent", "Mozilla/5.0 (compatible; ravens-nexus-osint)")
+        .send().await
+    {
+        Ok(r) if r.status().is_success() => {
+            let data: serde_json::Value = r.json().await.unwrap_or_default();
+            signed_envelope(serde_json::json!({ "ok": true, "invite": data })).into_response()
+        }
+        Ok(r) => {
+            let e = if r.status().as_u16() == 404 { "Приглашение не найдено или истекло" } else { "Ошибка Discord API" };
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"ok":false,"error":e}))).into_response()
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"ok":false,"error":format!("Ошибка сети: {}",e)}))).into_response(),
+    }
+}
+
+// ── Telegram OSINT: Chat / Channel Info ───────────────────────────────────────
+async fn tg_chat_info(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Json(req): Json<TgChatReq>,
+) -> impl IntoResponse {
+    let token = req.token.trim().to_uppercase();
+    if let Err((code, body)) = authorize_and_consume(&state, &headers, &token, req.hwid.trim(), "telegram_osint", &req.session_id) {
+        return (code, Json(body)).into_response();
+    }
+    let bot = req.bot_token.trim().to_string();
+    let target = req.target.trim().to_string();
+    if target.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"ok":false,"error":"Укажите @username или chat_id"}))).into_response();
+    }
+    let http = reqwest::Client::new();
+    let chat_url = format!("https://api.telegram.org/bot{}/getChat", bot);
+    let chat_res = http.get(&chat_url).query(&[("chat_id", &target)]).send().await;
+    match chat_res {
+        Ok(r) => {
+            let data: serde_json::Value = r.json().await.unwrap_or_default();
+            if data["ok"].as_bool().unwrap_or(false) {
+                let count_url = format!("https://api.telegram.org/bot{}/getChatMemberCount", bot);
+                let member_count = match http.get(&count_url).query(&[("chat_id", &target)]).send().await {
+                    Ok(cr) => cr.json::<serde_json::Value>().await.ok().and_then(|d| d["result"].as_i64()),
+                    Err(_) => None,
+                };
+                let admins_url = format!("https://api.telegram.org/bot{}/getChatAdministrators", bot);
+                let admins: serde_json::Value = match http.get(&admins_url).query(&[("chat_id", &target)]).send().await {
+                    Ok(ar) if ar.status().is_success() => {
+                        ar.json::<serde_json::Value>().await.ok()
+                            .and_then(|d| if d["ok"].as_bool().unwrap_or(false) { Some(d["result"].clone()) } else { None })
+                            .unwrap_or(serde_json::json!([]))
+                    }
+                    _ => serde_json::json!([]),
+                };
+                signed_envelope(serde_json::json!({
+                    "ok": true,
+                    "chat": data["result"],
+                    "member_count": member_count,
+                    "admins": admins,
+                })).into_response()
+            } else {
+                (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                    "ok": false,
+                    "error": data["description"].as_str().unwrap_or("Ошибка Telegram Bot API"),
+                }))).into_response()
+            }
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"ok":false,"error":format!("Ошибка сети: {}",e)}))).into_response(),
+    }
+}
+
 // ── Payment Endpoints ─────────────────────────────────────────────────────────
 async fn validate_license(
     State(state): State<SharedState>,
@@ -1315,6 +1507,10 @@ async fn main() {
         .route("/news", get(get_news_public))
         .route("/news/stream", get(news_sse))
         .route("/discord/state", get(discord_state))
+        .route("/discord/guild-info", post(dc_guild_info))
+        .route("/discord/user-info", post(dc_user_info))
+        .route("/discord/invite-info", post(dc_invite_info))
+        .route("/telegram/chat-info", post(tg_chat_info))
         .route("/payment/validate", post(validate_license))
         .route("/payment/create", post(create_payment))
         .route("/payment/status/:token", get(subscription_status));

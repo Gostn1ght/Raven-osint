@@ -35,6 +35,8 @@ pub fn run() {
             commands::minimize_window,
             commands::maximize_window,
             commands::close_window,
+            commands::discord_osint_run,
+            commands::telegram_osint_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

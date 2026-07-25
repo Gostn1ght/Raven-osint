@@ -93,9 +93,9 @@ impl Tier {
     pub fn allowed_modules(&self) -> Vec<&str> {
         match self {
             Tier::Free => vec!["social", "ip_geo", "whois"],
-            Tier::Pro => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone"],
+            Tier::Pro => vec!["social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "discord", "telegram"],
             Tier::Elite | Tier::Admin => vec![
-                "social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "intelx", "ai",
+                "social", "ip_geo", "whois", "hibp", "dorks", "paste", "darkweb", "phone", "intelx", "ai", "discord", "telegram",
             ],
         }
     }
@@ -1303,6 +1303,7 @@ async fn main() {
         .route("/news/:id", delete(admin_delete_news))
         .route("/stats", get(admin_stats))
         .route("/upload", post(upload_file))
+        .route("/discord/state", get(discord_state))
         .layer(middleware::from_fn(admin_auth));
 
     let api_routes = Router::new()
@@ -1314,7 +1315,6 @@ async fn main() {
         .route("/hwid/check", post(check_hwid_ban))
         .route("/news", get(get_news_public))
         .route("/news/stream", get(news_sse))
-        .route("/discord/state", get(discord_state))
         .route("/payment/validate", post(validate_license))
         .route("/payment/create", post(create_payment))
         .route("/payment/status/:token", get(subscription_status));

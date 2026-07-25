@@ -17,6 +17,30 @@
   let selectedModules = new Set(["social", "ip_geo", "whois"]);
   let aiText = "";
 
+  // ── Telegram → Discord forwarder ──────────────────────────────────────────────
+  // Discord self-bot (target side)
+  let discordToken = "";
+  let discordConnected = false;
+  let discordUser = "";
+  let discordChannels: any[] = [];   // [{id,name,guild}]
+  let discordTarget = "";            // chosen target channel id
+  let discordBusy = false;
+  let discordMsg = "";
+  // Telegram account (source side)
+  let tgApiId = "";
+  let tgApiHash = "";
+  let tgPhone = "";
+  let tgCode = "";
+  let tgPassword = "";
+  let tgStage = "disconnected";      // disconnected | code_sent | password_required | authorized
+  let tgUser = "";
+  let tgChannels: any[] = [];        // [{id,title,username}]
+  let tgSource = "";                 // chosen source channel id
+  let tgBusy = false;
+  let tgMsg = "";
+  // Forwarding
+  let fwdActive = false;
+
   // ── License / server ─────────────────────────────────────────────────────────
   const DEFAULT_SERVER_URL = "http://localhost:3000";
   let serverUrl = "";
@@ -351,6 +375,86 @@
     scanning = false;
   }
 
+  // ── Telegram → Discord forwarder ──────────────────────────────────────────────
+  // Discord self-bot (discord.js-selfbot-v13, via a Node sidecar) is the TARGET; a real
+  // Telegram user account (MTProto/grammers) is the SOURCE. All work happens in the Rust
+  // backend; the UI only invokes commands and shows escaped text (no innerHTML).
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function discordConnect() {
+    if (!discordToken.trim()) { discordMsg = "Введите токен пользователя"; return; }
+    discordBusy = true; discordMsg = "Подключение self-bot…";
+    try {
+      await invoke("discord_login", { token: discordToken.trim() });
+      for (let i = 0; i < 30; i++) {           // readiness is signalled asynchronously
+        const s: any = await invoke("discord_status");
+        if (s.ready) { discordConnected = true; discordUser = s.user || ""; break; }
+        await sleep(500);
+      }
+      if (discordConnected) { discordMsg = ""; await discordLoadChannels(); }
+      else discordMsg = "Вошли, но клиент ещё не готов — нажмите «Обновить каналы»";
+    } catch (e) { discordMsg = `${e}`; }
+    discordBusy = false;
+  }
+  async function discordLoadChannels() {
+    try { discordChannels = (await invoke("discord_list_channels")) as any[]; }
+    catch (e) { discordMsg = `${e}`; }
+  }
+  async function discordDisconnect() {
+    try { await invoke("discord_logout"); } catch {}
+    discordConnected = false; discordUser = ""; discordChannels = []; discordTarget = ""; fwdActive = false;
+    discordMsg = "";
+  }
+
+  async function tgSendCode() {
+    if (!tgApiId.trim() || !tgApiHash.trim() || !tgPhone.trim()) { tgMsg = "Заполните api_id, api_hash и телефон"; return; }
+    tgBusy = true; tgMsg = "Запрос кода…";
+    try {
+      const s: any = await invoke("tg_request_code", { apiId: parseInt(tgApiId, 10), apiHash: tgApiHash.trim(), phone: tgPhone.trim() });
+      tgStage = s.stage; tgMsg = "Код отправлен в Telegram";
+    } catch (e) { tgMsg = `${e}`; }
+    tgBusy = false;
+  }
+  async function tgSignIn() {
+    tgBusy = true; tgMsg = "Вход…";
+    try {
+      const s: any = await invoke("tg_sign_in", { code: tgCode.trim() });
+      tgStage = s.stage;
+      if (s.stage === "authorized") { tgUser = s.user || ""; tgMsg = ""; await tgLoadChannels(); }
+      else if (s.stage === "password_required") tgMsg = "Введите пароль двухфакторной защиты";
+    } catch (e) { tgMsg = `${e}`; }
+    tgBusy = false;
+  }
+  async function tgCheckPassword() {
+    tgBusy = true; tgMsg = "Проверка пароля…";
+    try {
+      const s: any = await invoke("tg_check_password", { password: tgPassword });
+      tgStage = s.stage;
+      if (s.stage === "authorized") { tgUser = s.user || ""; tgMsg = ""; tgPassword = ""; await tgLoadChannels(); }
+    } catch (e) { tgMsg = `${e}`; }
+    tgBusy = false;
+  }
+  async function tgLoadChannels() {
+    try { tgChannels = (await invoke("tg_list_channels")) as any[]; }
+    catch (e) { tgMsg = `${e}`; }
+  }
+  async function tgLogout() {
+    try { await invoke("tg_logout"); } catch {}
+    tgStage = "disconnected"; tgUser = ""; tgChannels = []; tgSource = ""; tgCode = ""; tgPassword = ""; fwdActive = false;
+    tgMsg = "";
+  }
+
+  async function startForward() {
+    if (!tgSource) { tgMsg = "Выберите канал Telegram-источник"; return; }
+    if (!discordTarget) { tgMsg = "Выберите канал Discord на вкладке Discord"; return; }
+    try { await invoke("tg_start_forward", { tgChannelId: tgSource, discordChannelId: discordTarget }); fwdActive = true; tgMsg = "Пересылка запущена"; }
+    catch (e) { tgMsg = `${e}`; }
+  }
+  async function stopForward() {
+    try { await invoke("tg_stop_forward"); } catch {}
+    fwdActive = false; tgMsg = "Пересылка остановлена";
+  }
+
   function toggleModule(mod: string) {
     if (selectedModules.has(mod)) selectedModules.delete(mod);
     else selectedModules.add(mod);
@@ -442,7 +546,7 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
 
   <!-- Nav -->
   <nav class="nav">
-    {#each [["ravens","⬡","Лента"],["scan","◎","OSINT"],["map","◈","Карта"],["settings","⚙","Настройки"],["about","𝓲","О системе"]] as [t, icon, label]}
+    {#each [["ravens","⬡","Лента"],["scan","◎","OSINT"],["discord","❖","Discord"],["telegram","✈","Telegram"],["map","◈","Карта"],["settings","⚙","Настройки"],["about","𝓲","О системе"]] as [t, icon, label]}
       <button class="nav-btn" class:active={activeTab === t} on:click={() => (activeTab = t)}>
         <span class="nav-ico">{icon}</span>{label}
       </button>
@@ -648,6 +752,160 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
       {:else}
         <div id="map-container" class="map"></div>
       {/if}
+
+    <!-- ── DISCORD ───────────────────────────────────────────────────────────── -->
+    {:else if activeTab === "discord"}
+      <div class="scroll">
+        <div class="section-head">
+          <div>
+            <div class="section-title">Discord · приёмник</div>
+            <div class="section-sub">Self-bot аккаунт, куда пересылаются посты из Telegram</div>
+          </div>
+        </div>
+
+        {#if !allowedModules.includes("discord")}
+          <div class="empty locked-tab">
+            <div class="empty-ico">❖</div>
+            <div class="section-title">Discord</div>
+            <div class="dim">Доступно на тарифе PRO и выше</div>
+            <button class="btn primary sm" on:click={() => { settingsSection = 'subscriptions'; activeTab = 'settings'; }}>Обновить подписку</button>
+          </div>
+        {:else if !discordConnected}
+          <div class="panel">
+            <div class="panel-title">Токен пользователя Discord</div>
+            <input class="input" type="password" bind:value={discordToken} placeholder="user token (self-bot)" />
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn primary" on:click={discordConnect} disabled={discordBusy || !discordToken}>
+                {discordBusy ? '⚡ Подключение…' : '► Подключить self-bot'}
+              </button>
+            </div>
+            {#if discordMsg}<div class="dim sm" style="margin-top:8px">{discordMsg}</div>{/if}
+          </div>
+        {:else}
+          <div class="panel">
+            <div class="panel-title">Подключено: {discordUser || '—'}</div>
+            <div style="display:flex;gap:8px;margin:6px 0 12px">
+              <button class="btn ghost sm" on:click={discordLoadChannels}>↻ Обновить каналы</button>
+              <button class="btn ghost sm" on:click={discordDisconnect}>Выйти</button>
+            </div>
+            <div class="panel-title">Целевой канал (куда слать)</div>
+            <div class="chan-list">
+              {#each discordChannels as ch}
+                <label class="chan" class:sel={discordTarget === ch.id}>
+                  <input type="radio" name="dtarget" value={ch.id} bind:group={discordTarget} />
+                  <span class="chan-name">#{ch.name}</span>
+                  <span class="chan-guild">{ch.guild}</span>
+                </label>
+              {/each}
+              {#if discordChannels.length === 0}<div class="dim sm" style="padding:10px">Нет доступных текстовых каналов</div>{/if}
+            </div>
+            {#if discordMsg}<div class="dim sm" style="margin-top:8px">{discordMsg}</div>{/if}
+          </div>
+        {/if}
+
+        <!-- Reference repository + risk disclaimer -->
+        <div class="repo-card">
+          <div class="repo-head">
+            <span class="repo-ico">❖</span>
+            <div class="repo-meta">
+              <div class="repo-title">discord.js-selfbot-v13</div>
+              <div class="repo-sub">aiko-chan-ai · официальный репозиторий self-bot библиотеки</div>
+            </div>
+            <span class="repo-badge">GitHub</span>
+          </div>
+          <div class="repo-desc">
+            Библиотека для автоматизации пользовательских аккаунтов Discord (self-bot). Приложена как справочный материал и доказательство.
+          </div>
+          <a class="repo-link" href="https://github.com/aiko-chan-ai/discord.js-selfbot-v13" target="_blank" rel="noopener noreferrer">
+            github.com/aiko-chan-ai/discord.js-selfbot-v13 ↗
+          </a>
+          <div class="repo-warn">
+            ⚠ Внимание: использование self-bot нарушает Условия обслуживания Discord и может привести к блокировке аккаунта.
+            Вы используете это исключительно на свой страх и риск. Администрация платформы не несёт никакой ответственности
+            за последствия использования.
+          </div>
+        </div>
+      </div>
+
+    <!-- ── TELEGRAM ──────────────────────────────────────────────────────────── -->
+    {:else if activeTab === "telegram"}
+      <div class="scroll">
+        <div class="section-head">
+          <div>
+            <div class="section-title">Telegram · источник</div>
+            <div class="section-sub">Аккаунт MTProto · выбор канала и пересылка постов в Discord</div>
+          </div>
+        </div>
+
+        {#if !allowedModules.includes("telegram")}
+          <div class="empty locked-tab">
+            <div class="empty-ico">✈</div>
+            <div class="section-title">Telegram</div>
+            <div class="dim">Доступно на тарифе PRO и выше</div>
+            <button class="btn primary sm" on:click={() => { settingsSection = 'subscriptions'; activeTab = 'settings'; }}>Обновить подписку</button>
+          </div>
+        {:else if tgStage !== 'authorized'}
+          <div class="panel">
+            <div class="panel-title">Подключение аккаунта (MTProto)</div>
+            <input class="input" bind:value={tgApiId} placeholder="api_id (my.telegram.org)" style="margin-bottom:8px" />
+            <input class="input" type="password" bind:value={tgApiHash} placeholder="api_hash" style="margin-bottom:8px" />
+            <input class="input" bind:value={tgPhone} placeholder="+телефон, напр. +79991234567" />
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn primary" on:click={tgSendCode} disabled={tgBusy}>{tgBusy ? '⚡…' : '► Отправить код'}</button>
+            </div>
+
+            {#if tgStage === 'code_sent' || tgStage === 'password_required'}
+              <div class="panel-title" style="margin-top:14px">Код из приложения Telegram</div>
+              <input class="input" bind:value={tgCode} placeholder="код подтверждения" />
+              <div style="margin-top:8px"><button class="btn primary" on:click={tgSignIn} disabled={tgBusy}>Войти</button></div>
+            {/if}
+            {#if tgStage === 'password_required'}
+              <div class="panel-title" style="margin-top:14px">Пароль 2FA</div>
+              <input class="input" type="password" bind:value={tgPassword} placeholder="пароль двухфакторной защиты" />
+              <div style="margin-top:8px"><button class="btn primary" on:click={tgCheckPassword} disabled={tgBusy}>Подтвердить</button></div>
+            {/if}
+            {#if tgMsg}<div class="dim sm" style="margin-top:8px">{tgMsg}</div>{/if}
+          </div>
+        {:else}
+          <div class="panel">
+            <div class="panel-title">Аккаунт: {tgUser || '—'}</div>
+            <div style="display:flex;gap:8px;margin:6px 0 12px">
+              <button class="btn ghost sm" on:click={tgLoadChannels}>↻ Обновить каналы</button>
+              <button class="btn ghost sm" on:click={tgLogout}>Выйти</button>
+            </div>
+            <div class="panel-title">Канал-источник</div>
+            <div class="chan-list">
+              {#each tgChannels as ch}
+                <label class="chan" class:sel={tgSource === ch.id}>
+                  <input type="radio" name="tgsource" value={ch.id} bind:group={tgSource} />
+                  <span class="chan-name">{ch.title}</span>
+                  {#if ch.username}<span class="chan-guild">@{ch.username}</span>{/if}
+                </label>
+              {/each}
+              {#if tgChannels.length === 0}<div class="dim sm" style="padding:10px">Каналы не найдены</div>{/if}
+            </div>
+          </div>
+
+          <div class="panel" style="margin-top:12px">
+            <div class="panel-title">Пересылка Telegram → Discord</div>
+            <div class="fwd-row">
+              <span class="fwd-chip">TG: {tgSource ? (tgChannels.find((c) => c.id === tgSource)?.title || tgSource) : '— не выбран'}</span>
+              <span class="fwd-arrow">→</span>
+              <span class="fwd-chip">DS: {discordTarget ? ('#' + (discordChannels.find((c) => c.id === discordTarget)?.name || discordTarget)) : '— выберите на вкладке Discord'}</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+              {#if !fwdActive}
+                <button class="btn primary" on:click={startForward} disabled={!tgSource || !discordTarget}>► Запустить пересылку</button>
+              {:else}
+                <button class="btn" on:click={stopForward}>■ Остановить</button>
+                <span class="rec">● LIVE</span>
+              {/if}
+            </div>
+            <div class="dim sm" style="margin-top:8px">В v1 пересылается текст постов (медиа — в следующей версии).</div>
+            {#if tgMsg}<div class="dim sm" style="margin-top:4px">{tgMsg}</div>{/if}
+          </div>
+        {/if}
+      </div>
 
     <!-- ── SETTINGS ──────────────────────────────────────────────────────────── -->
     {:else if activeTab === "settings"}
@@ -990,6 +1248,32 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
 
   .map { flex: 1; width: 100%; }
   .locked-tab { margin: auto; }
+
+  /* Discord / Telegram tabs — reference repo card + disclaimer */
+  .repo-card { margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+  .repo-head { display: flex; align-items: center; gap: 12px; }
+  .repo-ico { font-size: 20px; color: var(--accent); }
+  .repo-meta { flex: 1; min-width: 0; }
+  .repo-title { font-weight: 700; font-size: 13px; }
+  .repo-sub { font-size: 10.5px; color: var(--dim); margin-top: 2px; }
+  .repo-badge { font-size: 9.5px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--dim); border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+  .repo-desc { font-size: 11.5px; color: var(--text); opacity: 0.85; margin: 12px 0; line-height: 1.6; }
+  .repo-link { display: inline-block; font-size: 11.5px; color: var(--accent); text-decoration: none; word-break: break-all; }
+  .repo-link:hover { text-decoration: underline; }
+  .repo-warn { margin-top: 12px; font-size: 10.5px; line-height: 1.6; color: #fca5a5; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-left: 3px solid #ef4444; border-radius: 8px; padding: 10px 12px; }
+
+  /* Forwarder — channel pickers + mapping */
+  .chan-list { max-height: 34vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .chan { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; font-size: 11.5px; }
+  .chan:last-child { border-bottom: none; }
+  .chan:hover { background: rgba(255,255,255,0.04); }
+  .chan.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .chan input { accent-color: var(--accent); }
+  .chan-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chan-guild { color: var(--dim); margin-left: auto; font-size: 10px; white-space: nowrap; }
+  .fwd-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11px; }
+  .fwd-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+  .fwd-arrow { color: var(--accent); font-weight: 700; }
 
   /* ── Settings ──────────────────────────────────────────────────────────────── */
   .settings { display: flex; gap: 20px; }

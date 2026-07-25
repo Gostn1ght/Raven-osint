@@ -1,0 +1,11 @@
+{
+  "name": "ravens-discord-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ravens Nexus Discord self-bot sidecar. WARNING: discord.js-selfbot-v13 automates USER accounts, which violates Discord's Terms of Service and can get the account banned. Operated at the user's own risk.",
+  "main": "discord-selfbot.js",
+  "type": "commonjs",
+  "dependencies": {
+    "discord.js-selfbot-v13": "^3.7.1"
+  }
+}

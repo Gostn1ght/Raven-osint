@@ -38,6 +38,8 @@ hmac = "0.12"
 uuid = { version = "1", features = ["v4"] }
 # --- Pins to fix transitive build error (cookie 0.18.1 vs new time) ---
 time = "=0.3.36"
+grammers-client = "0.10.0"
+grammers-session = { version = "0.10.0", default-features = false }
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }

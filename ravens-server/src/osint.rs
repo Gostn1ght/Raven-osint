@@ -56,6 +56,8 @@ pub async fn run_module(module: &str, target: &str, findings: &[String]) -> Vec<
         "phone" => run_phone(target).await,
         "intelx" => run_intelx(target).await,
         "ai" => run_ai(target, findings).await,
+        "discord" => run_discord(target).await,
+        "telegram" => run_telegram(target).await,
         other => vec![OsintEvent::new("error", "error", format!("Неизвестный модуль: {}", other))],
     }
 }
@@ -576,4 +578,146 @@ fn fmt_num(n: i64) -> String {
         out.push(*c);
     }
     if n < 0 { format!("-{}", out) } else { out }
+}
+
+// ── DISCORD (user lookup) ───────────────────────────────────────────────────────
+// Uses the server's OWN bot token (DISCORD_BOT_TOKEN, env only) — the client never
+// sends a token. The target is validated as a numeric snowflake so it cannot be used to
+// reach arbitrary Discord API paths (no SSRF / path traversal via the {id} segment).
+pub async fn run_discord(user_id: &str) -> Vec<OsintEvent> {
+    let uid = user_id.trim().trim_start_matches('@');
+    let mut events = vec![OsintEvent::new("discord", "running", format!("Discord: поиск пользователя {}…", uid))];
+
+    if uid.len() < 17 || uid.len() > 20 || !uid.bytes().all(|b| b.is_ascii_digit()) {
+        events.push(OsintEvent::new("discord", "error", "Неверный ID: ожидается числовой Discord ID (17–20 цифр)"));
+        events.push(OsintEvent::new("discord", "done", "Discord: завершён"));
+        return events;
+    }
+
+    // Account creation time is encoded in the snowflake — derivable without any API call.
+    if let Ok(id_num) = uid.parse::<u64>() {
+        let created_ms = (id_num >> 22) + 1_420_070_400_000;
+        if let Some(dt) = chrono::DateTime::from_timestamp_millis(created_ms as i64) {
+            events.push(OsintEvent::new("discord", "found", format!("Аккаунт создан: {} UTC", dt.format("%Y-%m-%d %H:%M"))));
+        }
+    }
+
+    let token = match env_key("DISCORD_BOT_TOKEN") {
+        Some(t) => t,
+        None => {
+            events.push(OsintEvent::new("discord", "info", "Discord-бот не настроен на сервере — доступна только дата регистрации по ID"));
+            events.push(OsintEvent::new("discord", "done", "Discord: завершён"));
+            return events;
+        }
+    };
+
+    let c = client();
+    let url = format!("https://discord.com/api/v10/users/{}", uid);
+    match c.get(&url).header("Authorization", format!("Bot {}", token)).send().await {
+        Ok(r) if r.status().is_success() => {
+            if let Ok(j) = r.json::<serde_json::Value>().await {
+                let username = j["username"].as_str().unwrap_or("");
+                let global = j["global_name"].as_str().unwrap_or("");
+                let disc = j["discriminator"].as_str().unwrap_or("0");
+                let handle = if disc == "0" || disc.is_empty() { username.to_string() } else { format!("{}#{}", username, disc) };
+                if !handle.is_empty() {
+                    events.push(OsintEvent::new("discord", "found", format!("Пользователь: {}", handle)));
+                }
+                if !global.is_empty() {
+                    events.push(OsintEvent::new("discord", "found", format!("Отображаемое имя: {}", global)));
+                }
+                if j["bot"].as_bool().unwrap_or(false) {
+                    events.push(OsintEvent::new("discord", "found", "Тип: бот"));
+                }
+                if let Some(av) = j["avatar"].as_str() {
+                    let ext = if av.starts_with("a_") { "gif" } else { "png" };
+                    events.push(OsintEvent::new("discord", "found",
+                        format!("Аватар: https://cdn.discordapp.com/avatars/{}/{}.{}?size=512", uid, av, ext)));
+                }
+                if let Some(bn) = j["banner"].as_str() {
+                    let ext = if bn.starts_with("a_") { "gif" } else { "png" };
+                    events.push(OsintEvent::new("discord", "found",
+                        format!("Баннер: https://cdn.discordapp.com/banners/{}/{}.{}?size=1024", uid, bn, ext)));
+                }
+                let flags = j["public_flags"].as_u64().unwrap_or(0);
+                if flags != 0 {
+                    events.push(OsintEvent::new("discord", "found", format!("Значки: {}", describe_discord_flags(flags))));
+                }
+            }
+        }
+        Ok(r) if r.status().as_u16() == 404 => events.push(OsintEvent::new("discord", "error", "Пользователь с таким ID не найден")),
+        Ok(r) if r.status().as_u16() == 401 => events.push(OsintEvent::new("discord", "error", "Токен бота отклонён Discord (401)")),
+        Ok(r) if r.status().as_u16() == 429 => events.push(OsintEvent::new("discord", "error", "Discord: превышен лимит запросов (429)")),
+        Ok(r) => events.push(OsintEvent::new("discord", "error", format!("Discord API: HTTP {}", r.status().as_u16()))),
+        Err(e) => events.push(OsintEvent::new("discord", "error", format!("Ошибка сети: {}", e))),
+    }
+
+    events.push(OsintEvent::new("discord", "done", "Discord: завершён"));
+    events
+}
+
+fn describe_discord_flags(flags: u64) -> String {
+    let known: [(u64, &str); 13] = [
+        (1 << 0, "Discord Staff"), (1 << 1, "Partner"), (1 << 2, "HypeSquad Events"),
+        (1 << 3, "Bug Hunter"), (1 << 6, "HypeSquad Bravery"), (1 << 7, "HypeSquad Brilliance"),
+        (1 << 8, "HypeSquad Balance"), (1 << 9, "Early Supporter"), (1 << 14, "Bug Hunter Gold"),
+        (1 << 16, "Verified Bot"), (1 << 17, "Early Verified Bot Dev"), (1 << 18, "Certified Moderator"),
+        (1 << 22, "Active Developer"),
+    ];
+    let out: Vec<&str> = known.iter().filter(|(bit, _)| flags & bit != 0).map(|(_, n)| *n).collect();
+    if out.is_empty() { format!("0x{:X}", flags) } else { out.join(", ") }
+}
+
+// ── TELEGRAM (public t.me preview scrape — no auth) ─────────────────────────────
+// Only public Open Graph metadata is read. The username is sanitised to Telegram's own
+// charset [A-Za-z0-9_] so it cannot inject a different path or host into the t.me URL.
+pub async fn run_telegram(username: &str) -> Vec<OsintEvent> {
+    let uname: String = username.trim().trim_start_matches('@')
+        .chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+    let mut events = vec![OsintEvent::new("telegram", "running", format!("Telegram: поиск «{}»…", uname))];
+
+    if uname.len() < 4 || uname.len() > 32 {
+        events.push(OsintEvent::new("telegram", "error", "Неверное имя: 4–32 символа из [A-Za-z0-9_]"));
+        events.push(OsintEvent::new("telegram", "done", "Telegram: завершён"));
+        return events;
+    }
+
+    let c = client();
+    let url = format!("https://t.me/{}", uname);
+    match c.get(&url).send().await {
+        Ok(r) if r.status().is_success() => {
+            let html = r.text().await.unwrap_or_default();
+            let title = extract_meta(&html, "og:title");
+            let desc = extract_meta(&html, "og:description");
+            let image = extract_meta(&html, "og:image");
+            if title.is_empty() {
+                events.push(OsintEvent::new("telegram", "info", "Публичная страница не найдена (приватный или несуществующий аккаунт)"));
+            } else {
+                events.push(OsintEvent::new("telegram", "found", format!("Название: {}", title)));
+                if !desc.is_empty() {
+                    events.push(OsintEvent::new("telegram", "found", format!("Описание: {}", desc)));
+                }
+                if let Some(extra) = extract_tg_extra(&html) {
+                    events.push(OsintEvent::new("telegram", "found", format!("Статистика: {}", extra)));
+                }
+                if !image.is_empty() {
+                    events.push(OsintEvent::new("telegram", "found", format!("Аватар: {}", image)));
+                }
+                events.push(OsintEvent::new("telegram", "found", format!("Ссылка: {}", url)));
+            }
+        }
+        Ok(r) => events.push(OsintEvent::new("telegram", "error", format!("t.me: HTTP {}", r.status().as_u16()))),
+        Err(e) => events.push(OsintEvent::new("telegram", "error", format!("Ошибка сети: {}", e))),
+    }
+
+    events.push(OsintEvent::new("telegram", "done", "Telegram: завершён"));
+    events
+}
+
+// Telegram renders subscriber/member/photo counts in a `tgme_page_extra` element.
+fn extract_tg_extra(html: &str) -> Option<String> {
+    let re = regex::Regex::new(r#"tgme_page_extra"[^>]*>([^<]+)<"#).ok()?;
+    re.captures(html)
+        .map(|c| c[1].split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|s| !s.is_empty())
 }

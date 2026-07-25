@@ -694,6 +694,15 @@ function toast(msg, err = false) {
   t._timer = setTimeout(() => t.className = '', 3000);
 }
 
+// Escape untrusted text before interpolating into innerHTML. Discord guild/role/channel
+// names come from servers the bot joins (fully attacker-controlled), so they must never
+// be injected raw or they execute as HTML in the admin's authenticated session.
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 function headers() {
   return { 'Content-Type': 'application/json', 'x-admin-secret': adminSecret };
 }
@@ -1310,7 +1319,7 @@ let discordAutoRefresh = null;
 
 async function loadDiscordState() {
   try {
-    const state = await api('GET', '/api/discord/state');
+    const state = await api('GET', '/admin/discord/state');
     const statusEl = document.getElementById('discord-connection-status');
     const dotEl = document.querySelector('#discord-status .sess-dot');
     
@@ -1331,15 +1340,15 @@ async function loadDiscordState() {
     grid.innerHTML = state.guilds.map(g => `
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
         <div style="padding:12px">
-          <div style="font-size:11px;font-weight:700;margin-bottom:4px">${g.name}</div>
-          <div style="font-size:9px;color:var(--dim);margin-bottom:8px">ID: ${g.id}</div>
+          <div style="font-size:11px;font-weight:700;margin-bottom:4px">${esc(g.name)}</div>
+          <div style="font-size:9px;color:var(--dim);margin-bottom:8px">ID: ${esc(g.id)}</div>
           <div style="display:flex;gap:12px;font-size:10px;color:var(--dim)">
-            <span>👥 ${g.member_count} участников</span>
+            <span>👥 ${Number(g.member_count) || 0} участников</span>
             <span>📋 ${g.roles?.length || 0} ролей</span>
             <span>💬 ${g.channels?.length || 0} каналов</span>
           </div>
           <div style="margin-top:8px;font-size:9px;color:var(--dim)">
-            Владелец: ${g.owner_id}<br>
+            Владелец: ${esc(g.owner_id)}<br>
             Обновлено: ${g.updated_at ? new Date(g.updated_at).toLocaleString('ru-RU') : '—'}
           </div>
         </div>

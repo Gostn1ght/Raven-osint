@@ -33,6 +33,25 @@
   let banReason = "";
   let banDate = "";
 
+  // ── Discord ───────────────────────────────────────────────────────────────────
+  let dcBotToken = "";
+  let dcBotStatus: "idle" | "connecting" | "ok" | "error" = "idle";
+  let dcBotInfo: any = null;
+  let dcBotError = "";
+  let dcUserTokenInput = "";
+  let dcUsers: Array<{ token: string; info: any; status: "ok" | "error" }> = [];
+  let dcAddingUser = false;
+
+  // ── Telegram ──────────────────────────────────────────────────────────────────
+  let tgBotToken = "";
+  let tgBotStatus: "idle" | "connecting" | "ok" | "error" = "idle";
+  let tgBotInfo: any = null;
+  let tgBotError = "";
+  let tgPhoneInput = "";
+  let tgPasswordInput = "";
+  let tgAccounts: Array<{ phone: string; has2fa: boolean }> = [];
+  let tgAddingAccount = false;
+
   // ── News ─────────────────────────────────────────────────────────────────────
   let news: any[] = [];
   let openedNews: any = null;
@@ -193,6 +212,41 @@
     await checkBanStatus();
     checkHealth();
     if (serverUrl) { fetchNews(); subscribeNewsStream(); }
+
+    // ── Load saved Discord state ─────────────────────────────────────────────
+    try {
+      const savedDcBot = await invoke<string>("load_config", { key: "dc_bot_token" }).catch(() => "");
+      if (savedDcBot) { dcBotToken = savedDcBot; connectDiscordBot(); }
+    } catch {}
+    try {
+      const savedDcUsers = await invoke<string>("load_config", { key: "dc_users" }).catch(() => "[]");
+      const parsedDcUsers: Array<{ token: string }> = JSON.parse(savedDcUsers || "[]");
+      for (const u of parsedDcUsers) {
+        try {
+          const res = await fetch("https://discord.com/api/v10/users/@me", { headers: { Authorization: u.token } });
+          const info = res.ok ? await res.json() : null;
+          dcUsers = [...dcUsers, { token: u.token, info, status: res.ok ? "ok" : "error" }];
+        } catch { dcUsers = [...dcUsers, { token: u.token, info: null, status: "error" }]; }
+      }
+    } catch {}
+
+    // ── Load saved Telegram state ────────────────────────────────────────────
+    try {
+      const savedTgBot = await invoke<string>("load_config", { key: "tg_bot_token" }).catch(() => "");
+      if (savedTgBot) { tgBotToken = savedTgBot; connectTgBot(); }
+    } catch {}
+    try {
+      const savedTgPhones: string[] = JSON.parse(
+        await invoke<string>("load_config", { key: "tg_accounts" }).catch(() => "[]") || "[]"
+      );
+      for (const phone of savedTgPhones) {
+        try {
+          const stored = await invoke<string>("load_config", { key: `tg_acc_${phone.replace(/\D/g, "")}` }).catch(() => "{}");
+          const parsed = JSON.parse(stored || "{}");
+          tgAccounts = [...tgAccounts, { phone, has2fa: !!parsed.password }];
+        } catch { tgAccounts = [...tgAccounts, { phone, has2fa: false }]; }
+      }
+    } catch {}
   });
 
   // ── Health ───────────────────────────────────────────────────────────────────
@@ -359,6 +413,99 @@
   function setScheme(key: string) { currentScheme = key; localStorage.setItem("ravens_scheme", key); }
   function toggleCompactMode() { compactMode = !compactMode; localStorage.setItem("ravens_compact", String(compactMode)); }
 
+  // ── Discord functions ─────────────────────────────────────────────────────────
+  async function connectDiscordBot() {
+    if (!dcBotToken.trim()) return;
+    dcBotStatus = "connecting"; dcBotError = "";
+    try {
+      const res = await fetch("https://discord.com/api/v10/users/@me", {
+        headers: { Authorization: "Bot " + dcBotToken.trim() },
+      });
+      if (res.ok) {
+        dcBotInfo = await res.json();
+        dcBotStatus = "ok";
+        invoke("save_config", { key: "dc_bot_token", value: dcBotToken.trim() }).catch(() => {});
+      } else {
+        dcBotStatus = "error";
+        dcBotError = res.status === 401 ? "Неверный токен бота" : `Ошибка ${res.status}`;
+      }
+    } catch { dcBotStatus = "error"; dcBotError = "Нет соединения с Discord"; }
+  }
+
+  function disconnectDiscordBot() {
+    dcBotToken = ""; dcBotInfo = null; dcBotStatus = "idle";
+    invoke("clear_config", { key: "dc_bot_token" }).catch(() => {});
+  }
+
+  async function addDiscordUser() {
+    if (!dcUserTokenInput.trim() || dcAddingUser) return;
+    dcAddingUser = true;
+    const t = dcUserTokenInput.trim();
+    try {
+      const res = await fetch("https://discord.com/api/v10/users/@me", {
+        headers: { Authorization: t },
+      });
+      const info = res.ok ? await res.json() : null;
+      dcUsers = [...dcUsers, { token: t, info, status: res.ok ? "ok" : "error" }];
+    } catch {
+      dcUsers = [...dcUsers, { token: t, info: null, status: "error" }];
+    }
+    dcUserTokenInput = "";
+    saveDiscordUsers();
+    dcAddingUser = false;
+  }
+
+  function removeDiscordUser(i: number) {
+    dcUsers = dcUsers.filter((_, idx) => idx !== i);
+    saveDiscordUsers();
+  }
+
+  function saveDiscordUsers() {
+    invoke("save_config", { key: "dc_users", value: JSON.stringify(dcUsers.map((u) => ({ token: u.token }))) }).catch(() => {});
+  }
+
+  // ── Telegram functions ────────────────────────────────────────────────────────
+  async function connectTgBot() {
+    if (!tgBotToken.trim()) return;
+    tgBotStatus = "connecting"; tgBotError = "";
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${tgBotToken.trim()}/getMe`);
+      const data = await res.json();
+      if (data.ok) {
+        tgBotInfo = data.result; tgBotStatus = "ok";
+        invoke("save_config", { key: "tg_bot_token", value: tgBotToken.trim() }).catch(() => {});
+      } else {
+        tgBotStatus = "error";
+        tgBotError = data.description || "Неверный токен";
+      }
+    } catch { tgBotStatus = "error"; tgBotError = "Нет соединения с Telegram"; }
+  }
+
+  function disconnectTgBot() {
+    tgBotToken = ""; tgBotInfo = null; tgBotStatus = "idle";
+    invoke("clear_config", { key: "tg_bot_token" }).catch(() => {});
+  }
+
+  function addTgAccount() {
+    if (!tgPhoneInput.trim() || tgAddingAccount) return;
+    tgAddingAccount = true;
+    const phone = tgPhoneInput.trim();
+    const has2fa = !!tgPasswordInput.trim();
+    const key = `tg_acc_${phone.replace(/\D/g, "")}`;
+    invoke("save_config", { key, value: JSON.stringify({ phone, password: tgPasswordInput.trim() }) }).catch(() => {});
+    tgAccounts = [...tgAccounts, { phone, has2fa }];
+    tgPhoneInput = ""; tgPasswordInput = "";
+    invoke("save_config", { key: "tg_accounts", value: JSON.stringify(tgAccounts.map((a) => a.phone)) }).catch(() => {});
+    tgAddingAccount = false;
+  }
+
+  function removeTgAccount(i: number) {
+    const acc = tgAccounts[i];
+    invoke("clear_config", { key: `tg_acc_${acc.phone.replace(/\D/g, "")}` }).catch(() => {});
+    tgAccounts = tgAccounts.filter((_, idx) => idx !== i);
+    invoke("save_config", { key: "tg_accounts", value: JSON.stringify(tgAccounts.map((a) => a.phone)) }).catch(() => {});
+  }
+
   // ── Dossier export ───────────────────────────────────────────────────────────
   function generateDossier() {
     const found = events.filter((e: any) => e.type === "found");
@@ -442,7 +589,7 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
 
   <!-- Nav -->
   <nav class="nav">
-    {#each [["ravens","⬡","Лента"],["scan","◎","OSINT"],["map","◈","Карта"],["settings","⚙","Настройки"],["about","𝓲","О системе"]] as [t, icon, label]}
+    {#each [["ravens","⬡","Лента"],["scan","◎","OSINT"],["map","◈","Карта"],["discord","💬","Discord"],["telegram","✈","Telegram"],["settings","⚙","Настройки"],["about","𝓲","О системе"]] as [t, icon, label]}
       <button class="nav-btn" class:active={activeTab === t} on:click={() => (activeTab = t)}>
         <span class="nav-ico">{icon}</span>{label}
       </button>
@@ -648,6 +795,162 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
       {:else}
         <div id="map-container" class="map"></div>
       {/if}
+
+    <!-- ── DISCORD ───────────────────────────────────────────────────────────── -->
+    {:else if activeTab === "discord"}
+      <div class="scroll">
+        <div class="section-head">
+          <div>
+            <div class="section-title">💬 Discord</div>
+            <div class="section-sub">Подключите бота и пользовательские аккаунты</div>
+          </div>
+        </div>
+
+        <!-- Bot card -->
+        <div class="intg-card">
+          <div class="panel-title">БОТ</div>
+          {#if dcBotStatus === "ok" && dcBotInfo}
+            <div class="intg-connected">
+              <div class="intg-avatar dc">🤖</div>
+              <div class="intg-info">
+                <div class="intg-name">{dcBotInfo.username}{dcBotInfo.discriminator && dcBotInfo.discriminator !== "0" ? "#" + dcBotInfo.discriminator : ""}</div>
+                <div class="dim sm">ID: {dcBotInfo.id} · Bot</div>
+              </div>
+              <span class="badge-conn">● ONLINE</span>
+              <button class="btn ghost sm" on:click={disconnectDiscordBot}>Отключить</button>
+            </div>
+          {:else}
+            <div class="field">
+              <label class="lbl">Bot Token</label>
+              <div class="row">
+                <input class="input grow" type="password" bind:value={dcBotToken}
+                  placeholder="Токен из Discord Developer Portal"
+                  on:keydown={(e) => e.key === "Enter" && connectDiscordBot()} />
+                <button class="btn primary sm" on:click={connectDiscordBot}
+                  disabled={dcBotStatus === "connecting" || !dcBotToken}>
+                  {dcBotStatus === "connecting" ? "⏳" : "Подключить"}
+                </button>
+              </div>
+              {#if dcBotError}<div class="intg-err">✗ {dcBotError}</div>{/if}
+            </div>
+            <div class="hint">Создайте приложение на <a href="https://discord.com/developers/applications" target="_blank">discord.com/developers</a>, перейдите в Bot → Token.</div>
+          {/if}
+        </div>
+
+        <!-- User accounts card -->
+        <div class="intg-card">
+          <div class="panel-title">ПОЛЬЗОВАТЕЛИ · {dcUsers.length}</div>
+          {#if dcUsers.length > 0}
+            <div class="intg-list">
+              {#each dcUsers as u, i}
+                <div class="intg-row" class:intg-row-err={u.status === "error"}>
+                  <div class="intg-avatar dc">👤</div>
+                  <div class="intg-info">
+                    {#if u.info}
+                      <div class="intg-name">{u.info.username}{u.info.discriminator && u.info.discriminator !== "0" ? "#" + u.info.discriminator : ""}</div>
+                      <div class="dim sm">ID: {u.info.id}</div>
+                    {:else}
+                      <div class="intg-name mono" style="font-size:10px">{u.token.substring(0, 28)}…</div>
+                      <div class="dim sm" style="color:#fca5a5">Не удалось проверить токен</div>
+                    {/if}
+                  </div>
+                  <button class="btn ghost sm intg-del" on:click={() => removeDiscordUser(i)}>✕</button>
+                </div>
+              {/each}
+            </div>
+            <div class="divider"></div>
+          {/if}
+          <div class="field">
+            <label class="lbl">Добавить аккаунт (user token)</label>
+            <div class="row">
+              <input class="input grow" type="password" bind:value={dcUserTokenInput}
+                placeholder="User token"
+                on:keydown={(e) => e.key === "Enter" && addDiscordUser()} />
+              <button class="btn sm" on:click={addDiscordUser} disabled={dcAddingUser || !dcUserTokenInput}>
+                {dcAddingUser ? "⏳" : "+ Добавить"}
+              </button>
+            </div>
+          </div>
+          <div class="hint warn-hint">⚠ Использование user-token нарушает ToS Discord. Только для личного использования.</div>
+        </div>
+      </div>
+
+    <!-- ── TELEGRAM ────────────────────────────────────────────────────────────── -->
+    {:else if activeTab === "telegram"}
+      <div class="scroll">
+        <div class="section-head">
+          <div>
+            <div class="section-title">✈ Telegram</div>
+            <div class="section-sub">Подключите бота и аккаунты пользователей</div>
+          </div>
+        </div>
+
+        <!-- Bot card -->
+        <div class="intg-card">
+          <div class="panel-title">БОТ</div>
+          {#if tgBotStatus === "ok" && tgBotInfo}
+            <div class="intg-connected">
+              <div class="intg-avatar tg">🤖</div>
+              <div class="intg-info">
+                <div class="intg-name">@{tgBotInfo.username}</div>
+                <div class="dim sm">{tgBotInfo.first_name} · ID: {tgBotInfo.id}</div>
+              </div>
+              <span class="badge-conn">● ONLINE</span>
+              <button class="btn ghost sm" on:click={disconnectTgBot}>Отключить</button>
+            </div>
+          {:else}
+            <div class="field">
+              <label class="lbl">Bot Token (@BotFather)</label>
+              <div class="row">
+                <input class="input grow" type="password" bind:value={tgBotToken}
+                  placeholder="123456789:ABCDefGhIjKlMnOpQrStUvWxYz"
+                  on:keydown={(e) => e.key === "Enter" && connectTgBot()} />
+                <button class="btn primary sm" on:click={connectTgBot}
+                  disabled={tgBotStatus === "connecting" || !tgBotToken}>
+                  {tgBotStatus === "connecting" ? "⏳" : "Подключить"}
+                </button>
+              </div>
+              {#if tgBotError}<div class="intg-err">✗ {tgBotError}</div>{/if}
+            </div>
+            <div class="hint">Напишите <a href="https://t.me/BotFather" target="_blank">@BotFather</a> → /newbot → скопируйте токен.</div>
+          {/if}
+        </div>
+
+        <!-- User accounts card -->
+        <div class="intg-card">
+          <div class="panel-title">АККАУНТЫ · {tgAccounts.length}</div>
+          {#if tgAccounts.length > 0}
+            <div class="intg-list">
+              {#each tgAccounts as acc, i}
+                <div class="intg-row">
+                  <div class="intg-avatar tg">👤</div>
+                  <div class="intg-info">
+                    <div class="intg-name">{acc.phone}</div>
+                    <div class="dim sm">
+                      {#if acc.has2fa}🔐 Облачный пароль сохранён{:else}Без облачного пароля{/if}
+                    </div>
+                  </div>
+                  <button class="btn ghost sm intg-del" on:click={() => removeTgAccount(i)}>✕</button>
+                </div>
+              {/each}
+            </div>
+            <div class="divider"></div>
+          {/if}
+          <div class="field">
+            <label class="lbl">Номер телефона</label>
+            <input class="input" bind:value={tgPhoneInput} placeholder="+79991234567" />
+          </div>
+          <div class="field">
+            <label class="lbl">Облачный пароль (2FA) — если включён</label>
+            <input class="input" type="password" bind:value={tgPasswordInput}
+              placeholder="Оставьте пустым, если 2FA не установлен" />
+            <div class="hint">Пароль шифруется вашим HWID и хранится локально. Проверка 2FA происходит при подключении через сервер (MTProto).</div>
+          </div>
+          <button class="btn primary sm" on:click={addTgAccount} disabled={!tgPhoneInput || tgAddingAccount}>
+            {tgAddingAccount ? "⏳" : "+ Добавить аккаунт"}
+          </button>
+        </div>
+      </div>
 
     <!-- ── SETTINGS ──────────────────────────────────────────────────────────── -->
     {:else if activeTab === "settings"}
@@ -1058,4 +1361,40 @@ ${aiText ? `<h2>AI-ДОСЬЕ</h2><div class="ai">${esc(aiText)}</div>` : ""}
   .scroll::-webkit-scrollbar-thumb, .console::-webkit-scrollbar-thumb, .scrolly::-webkit-scrollbar-thumb, .grow::-webkit-scrollbar-thumb {
     background: color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 3px;
   }
+
+  /* ── Discord / Telegram integration cards ─────────────────────────────────── */
+  .intg-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; margin-bottom: 14px; backdrop-filter: blur(10px);
+    max-width: 640px;
+  }
+  .intg-connected {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+    border: 1px solid var(--border-hi);
+  }
+  .intg-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .intg-avatar.dc { background: color-mix(in srgb, #5865f2 25%, transparent); }
+  .intg-avatar.tg { background: color-mix(in srgb, #26a5e4 25%, transparent); }
+  .intg-info { flex: 1; min-width: 0; }
+  .intg-name { font-size: 13px; font-weight: 700; }
+  .badge-conn {
+    font-size: 10px; color: #4ade80; font-weight: 700;
+    letter-spacing: 1px; flex-shrink: 0;
+  }
+  .intg-err { font-size: 11px; color: #fca5a5; margin-top: 8px; }
+  .intg-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+  .intg-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 10px;
+    background: rgba(0,0,0,0.22); border: 1px solid var(--border);
+  }
+  .intg-row-err { border-color: rgba(248,113,113,0.25); }
+  .intg-del { color: #fca5a5 !important; border-color: rgba(248,113,113,0.4) !important; }
+  .warn-hint { color: #fbbf24 !important; }
 </style>
